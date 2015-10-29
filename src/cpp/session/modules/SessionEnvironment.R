@@ -356,10 +356,10 @@
 
       # use internal editor for files and functions, otherwise
       # delegate to the default editor
-      if (is.null(name) || is.function(name)) {
+      if (missing(name) || is.null(name) || is.function(name)) {
 
          # if no name then use file
-         if (is.null(name)) {
+         if (missing(name) || is.null(name)) {
             if (!is.null(file) && nzchar(file))
                targetFile <- file
             else
