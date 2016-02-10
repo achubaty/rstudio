@@ -805,6 +805,13 @@ var RCodeModel = function(session, tokenizer,
          type = token.type;
          position = iterator.getCurrentTokenPosition();
 
+         // Skip roxygen comments.
+         var state = this.$session.getState(position.row);
+         if (state === "rd-start") {
+            iterator.moveToEndOfRow();
+            continue;
+         }
+
          // Figure out if we're in R mode. This is a hack since
          // unfortunately the code model is handling both R and
          // non-R modes right now -- for example, '{' should only
@@ -1417,12 +1424,24 @@ var RCodeModel = function(session, tokenizer,
 
             if (tokenCursor.isAtStartOfNewExpression(false))
             {
-               if (currentValue === "{")
+               if (currentValue === "{" ||
+                   currentValue === "[" ||
+                   currentValue === "(")
+               {
                   continuationIndent = tab;
+               }
 
                return this.$getIndent(
                   this.$doc.getLine(tokenCursor.$row)
                ) + continuationIndent;
+            }
+
+            if (currentValue === "(" &&
+                tokenCursor.isAtStartOfNewExpression(true))
+            {
+               return this.$getIndent(
+                  this.$doc.getLine(tokenCursor.$row)
+               ) + tab;
             }
              
             // Walk over matching braces ('()', '{}', '[]')

@@ -34,6 +34,7 @@ import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Anchor;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Mode.InsertChunkInfo;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Range;
+import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Selection;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.spelling.CharClassifier;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.spelling.TokenPredicate;
 import org.rstudio.studio.client.workbench.views.source.editors.text.cpp.CppCompletionContext;
@@ -253,13 +254,14 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    JavaScriptObject getCleanStateToken();
    boolean checkCleanStateToken(JavaScriptObject token);
 
+   Selection getNativeSelection();
    Position getSelectionStart();
    Position getSelectionEnd();
    Range getSelectionRange();
    void setSelectionRange(Range range);
+   
    int getLength(int row);
    int getRowCount();
-
    String getLine(int row);
    
    char getCharacterAtCursor();
@@ -312,6 +314,7 @@ public interface DocDisplay extends HasValueChangeHandlers<Void>,
    
    void beginCollabSession(CollabEditStartParams params, DirtyState dirtyState);
    boolean hasActiveCollabSession();
+   boolean hasFollowingCollabSession();
    void endCollabSession();
 
    void setPopupVisible(boolean visible);

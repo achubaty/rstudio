@@ -49,7 +49,14 @@ namespace {
 
 bool canWriteToProjectDir(const FilePath& projectDirPath)
 {
-   FilePath testFile = projectDirPath.complete(core::system::generateUuid());
+   std::string prefix(
+#ifndef _WIN32
+   "."
+#endif 
+   "write-test-");
+
+   FilePath testFile = projectDirPath.complete(prefix +
+         core::system::generateUuid());
    Error error = core::writeStringToFile(testFile, "test");
    if (error)
    {
@@ -696,7 +703,7 @@ bool ProjectContext::isPackageProject()
 bool ProjectContext::supportsSharing()
 {
    // never supports sharing if disabled explicitly
-   if (!options().getBoolOverlayOption(kProjectSharingSessionOption))
+   if (!core::system::getenv(kRStudioDisableProjectSharing).empty())
       return false;
 
    // otherwise, check to see whether shared storage is configured
@@ -723,7 +730,7 @@ bool ProjectContext::ownedByUser()
       // existing behavior) 
       return true;
    }
-   return st.st_uid == ::getuid();
+   return st.st_uid == ::geteuid();
 #endif
 }
 

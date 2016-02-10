@@ -48,7 +48,6 @@ import org.rstudio.core.client.command.CommandBinder;
 import org.rstudio.core.client.command.Handler;
 import org.rstudio.core.client.command.KeyboardHelper;
 import org.rstudio.core.client.command.KeyboardShortcut;
-import org.rstudio.core.client.command.UserCommandManager.UserCommandResult;
 import org.rstudio.core.client.events.EnsureHeightHandler;
 import org.rstudio.core.client.events.EnsureVisibleHandler;
 import org.rstudio.core.client.events.HasEnsureHeightHandlers;
@@ -105,7 +104,6 @@ import org.rstudio.studio.client.server.ServerError;
 import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.server.Void;
 import org.rstudio.studio.client.server.VoidServerRequestCallback;
-import org.rstudio.studio.client.server.remote.ExecuteUserCommandEvent;
 import org.rstudio.studio.client.shiny.events.LaunchShinyApplicationEvent;
 import org.rstudio.studio.client.shiny.events.ShinyApplicationStatusEvent;
 import org.rstudio.studio.client.shiny.model.ShinyApplicationParams;
@@ -149,6 +147,8 @@ import org.rstudio.studio.client.workbench.views.source.editors.text.status.Stat
 import org.rstudio.studio.client.workbench.views.source.editors.text.ui.ChooseEncodingDialog;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ui.RMarkdownNoParamsDialog;
 import org.rstudio.studio.client.workbench.views.source.events.CollabEditStartParams;
+import org.rstudio.studio.client.workbench.views.source.events.CollabExternalEditEvent;
+import org.rstudio.studio.client.workbench.views.source.events.DocFocusedEvent;
 import org.rstudio.studio.client.workbench.views.source.events.DocTabDragStateChangedEvent;
 import org.rstudio.studio.client.workbench.views.source.events.DocWindowChangedEvent;
 import org.rstudio.studio.client.workbench.views.source.events.PopoutDocEvent;
@@ -219,6 +219,7 @@ public class TextEditingTarget implements
             RmdOutputFormatChangedEvent.Handler handler);
       
       void setPublishPath(String type, String publishPath);
+      void invokePublish();
       
       void initWidgetSize();
       
@@ -933,51 +934,6 @@ public class TextEditingTarget implements
       }
    }
    
-   public void onExecuteUserCommand(final ExecuteUserCommandEvent event)
-   {
-      withSavedDoc(new Command()
-      {
-         @Override
-         public void execute()
-         {
-            Range range = docDisplay_.getSelectionRange();
-            String filePath = StringUtil.notNull(docUpdateSentinel_.getPath());
-            server_.executeUserCommand(
-                  event.getCommandName(),
-                  docDisplay_.getLines(),
-                  filePath,
-                  range.getStart().getRow(),
-                  range.getStart().getColumn(),
-                  range.getEnd().getRow(),
-                  range.getEnd().getColumn(),
-                  new ServerRequestCallback<JsArray<UserCommandResult>>()
-                  {
-                     @Override
-                     public void onResponseReceived(JsArray<UserCommandResult> results)
-                     {
-                        applyUserCommandResult(results);
-                     }
-
-                     @Override
-                     public void onError(ServerError error)
-                     {
-                        Debug.logError(error);
-                     }
-                  });
-         }
-      });
-   }
-   
-   private void applyUserCommandResult(JsArray<UserCommandResult> results)
-   {
-      for (int i = 0; i < results.length(); i++)
-      {
-         UserCommandResult result = results.get(i);
-         docDisplay_.replaceRange(result.getRange(), result.getText());
-      }
-
-   }
-   
    @Override
    public void recordCurrentNavigationPosition()
    {
@@ -1144,7 +1100,7 @@ public class TextEditingTarget implements
                   }
                }, 
                null, // cancelOperation,
-               "Join Edit Session", 
+               "Discard and Join", 
                "Work on a Copy", 
                true  // yesIsDefault
                );
@@ -1317,6 +1273,9 @@ public class TextEditingTarget implements
       {
          public void onFocus(FocusEvent event)
          {
+            // let anyone listening know this doc just got focus
+            events_.fireEvent(new DocFocusedEvent(getPath(), getId()));
+            
             if (queuedCollabParams_ != null)
             {
                // join an in-progress collab session if we aren't already part
@@ -1326,37 +1285,19 @@ public class TextEditingTarget implements
                   beginQueuedCollabSession();
                }
             }
-            else
+
+            // check to see if the file's been saved externally--we do this even
+            // in a collaborative editing session so we can get delete
+            // notifications
+            Scheduler.get().scheduleFixedDelay(new RepeatingCommand()
             {
-               // check to see if the file's been saved externally
-               Scheduler.get().scheduleFixedDelay(new RepeatingCommand()
+               public boolean execute()
                {
-                  public boolean execute()
-                  {
-                     if (view_.isAttached())
-                        checkForExternalEdit();
-                     return false;
-                  }
-               }, 500);
-            }
-            
-            // if we're in the main window and we get focus, let the window
-            // manager know (satellite windows are tracked on window activation)
-            if (SourceWindowManager.isMainSourceWindow())
-            {
-               // we won't sync the focus point to the main window unless it
-               // has focus, and the doc gets focus before the window does, so
-               // defer sync until the window has a chance to acquire focus
-               Scheduler.get().scheduleDeferred(new Scheduler.ScheduledCommand()
-               {
-                  @Override
-                  public void execute()
-                  {
-                     RStudioGinjector.INSTANCE.getSourceWindowManager()
-                                              .setLastFocusedSourceWindowId("");
-                  }
-               });
-            }
+                  if (view_.isAttached())
+                     checkForExternalEdit();
+                  return false;
+               }
+            }, 500);
          }
       });
       
@@ -2079,17 +2020,52 @@ public class TextEditingTarget implements
 
    public boolean onBeforeDismiss()
    {
-      Command closeCommand = new Command() {
+      final Command closeCommand = new Command() 
+      {
          public void execute()
          {
             CloseEvent.fire(TextEditingTarget.this, null);
          }
       };
+      
        
-      if (dirtyState_.getValue())
-         saveWithPrompt(closeCommand, null);
+      final Command promptCommand = new Command() 
+      {
+         public void execute()
+         {
+            if (dirtyState_.getValue())
+               saveWithPrompt(closeCommand, null);
+            else
+               closeCommand.execute();
+         }
+      };
+      
+      if (docDisplay_.hasFollowingCollabSession())
+      {
+         globalDisplay_.showYesNoMessage(GlobalDisplay.MSG_WARNING,
+                         getName().getValue() + " - Active Following Session",
+                         "You're actively following another user's cursor " +
+                         "in '" + getName().getValue() + "'.\n\n" +
+                         "If you close this file, you won't see their " + 
+                         "cursor until they edit another file.",
+                         false,
+                         new Operation() 
+                         {
+                            public void execute() 
+                            { 
+                               promptCommand.execute();
+                            }
+                         },
+                         null,
+                         null,
+                         "Close Anyway",
+                         "Cancel",
+                         false);
+      }
       else
-         closeCommand.execute();
+      {
+         promptCommand.execute();
+      }
 
       return false;
    }
@@ -2377,6 +2353,15 @@ public class TextEditingTarget implements
       int lineCount = docDisplay_.getRowCount();
       if (lineCount < 1)
          return;
+      
+      if (docDisplay_.hasActiveCollabSession())
+      {
+         // mutating the code (especially as below where the entire document 
+         // contents are changed) during a save operation inside a collaborative
+         // editing session would require some nuanced orchestration so for now
+         // these preferences don't apply to shared editing sessions
+         return;
+      }
       
       if (prefs_.stripTrailingWhitespace().getValue() &&
           !fileType_.isMarkdown())
@@ -3058,7 +3043,8 @@ public class TextEditingTarget implements
             {
                events_.fireEventToMainWindow(new DocWindowChangedEvent(
                      getId(), SourceWindowManager.getSourceWindowId(), "",
-                     DocTabDragParams.create(getId(), currentPosition()), 0));
+                     DocTabDragParams.create(getId(), currentPosition()),
+                     docUpdateSentinel_.getDoc().getCollabParams(), 0));
             }
          });
       }
@@ -3290,13 +3276,7 @@ public class TextEditingTarget implements
    @Handler
    void onRsconnectDeploy()
    {
-      if (docUpdateSentinel_ == null)
-         return;
-
-      // only Shiny files get the deploy command, so we can be confident we're
-      // deploying an app here
-      events_.fireEvent(RSConnectActionEvent.DeployAppEvent(
-            docUpdateSentinel_.getPath(), null));
+      view_.invokePublish();
    }
 
    @Handler 
@@ -5139,16 +5119,6 @@ public class TextEditingTarget implements
       if (getPath() == null)
          return;
       
-      // If we're in a collaborative session, we rely on it to sync contents
-      // (including saved/unsaved state); otherwise we'd need to (a) distinguish
-      // between "external edits" caused by other people in the session saving
-      // the file (already synced) and true external edits from other
-      // programs/processes,  and (b) and figure out what to when > 1 person
-      // gets the "file has changed externally" prompt (even at best this
-      // creates a "last writer wins" race condition)
-      if (docDisplay_ != null && docDisplay_.hasActiveCollabSession())
-         return;
-
       final Invalidation.Token token = externalEditCheckInvalidation_.getInvalidationToken();
 
       server_.checkForExternalEdit(
@@ -5196,6 +5166,18 @@ public class TextEditingTarget implements
                   }
                   else if (response.isModified())
                   {
+                     // If we're in a collaborative session, we need to let it
+                     // reconcile the modification
+                     if (docDisplay_ != null && 
+                         docDisplay_.hasActiveCollabSession() &&
+                         response.getItem() != null)
+                     {
+                        events_.fireEvent(new CollabExternalEditEvent(
+                              getId(), getPath(), 
+                              response.getItem().getLastModifiedNative()));
+                        return;
+                     }
+
                      ignoreDeletes_ = false; // Now we know it exists
 
                      // Use StringUtil.formatDate(response.getLastModified())?

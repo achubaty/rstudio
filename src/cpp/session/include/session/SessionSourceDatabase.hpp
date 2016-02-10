@@ -59,6 +59,8 @@ public:
    const std::string& folds() const { return folds_; }
    const std::string& collabServer() const { return collabServer_; }
    std::string getProperty(const std::string& name) const;
+   const std::time_t lastContentUpdate() const { return lastContentUpdate_; }
+   const std::time_t lastKnownWriteTime() const { return lastKnownWriteTime_; }
 
    // is this an untitled document?
    bool isUntitled() const;
@@ -108,6 +110,8 @@ public:
 
    void updateLastKnownWriteTime();
 
+   void setLastKnownWriteTime(std::time_t time);
+
    // applies the values in the given properties object to the document's property
    // bag. this does NOT replace all of the doc's properties on the server; any
    // properties that already exist but are not present in the given object are
@@ -151,6 +155,7 @@ private:
    std::string encoding_;
    std::string folds_;
    std::time_t lastKnownWriteTime_;
+   std::time_t lastContentUpdate_;
    bool dirty_;
    double created_;
    bool sourceOnSave_;

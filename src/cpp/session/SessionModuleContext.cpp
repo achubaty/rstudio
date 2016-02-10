@@ -129,12 +129,18 @@ SEXP rs_enqueClientEvent(SEXP nameSEXP, SEXP dataSEXP)
          type = session::client_events::kUnhandledError;
       else if (name == "enable_rstudio_connect")
          type = session::client_events::kEnableRStudioConnect;
-      else if (name == "rmd_params_edit")
-         type = session::client_events::kRmdParamsEdit;
+      else if (name == "shiny_gadget_dialog")
+         type = session::client_events::kShinyGadgetDialog;
       else if (name == "rmd_params_ready")
          type = session::client_events::kRmdParamsReady;
       else if (name == "jump_to_function")
          type = session::client_events::kJumpToFunction;
+      else if (name == "replace_ranges")
+         type = session::client_events::kReplaceRanges;
+      else if (name == "send_to_console")
+         type = session::client_events::kSendToConsole;
+      else if (name == "get_active_document_context")
+         type = session::client_events::kGetActiveDocumentContext;
 
       if (type != -1)
       {
@@ -339,7 +345,7 @@ bool s_monitorByScanning = false;
 
 FilePath monitoredParentPath()
 {
-   FilePath monitoredPath = userScratchPath().complete("monitored");
+   FilePath monitoredPath = userScratchPath().complete(kMonitoredPath);
    Error error = monitoredPath.ensureDirectory();
    if (error)
       LOG_ERROR(error);
@@ -998,6 +1004,28 @@ std::string rLocalHelpPort()
    return port;
 }
 
+std::vector<FilePath> getLibPaths()
+{
+   std::vector<std::string> libPathsString;
+   r::exec::RFunction rfLibPaths(".libPaths");
+   Error error = rfLibPaths.call(&libPathsString);
+   if (error)
+      LOG_ERROR(error);
+
+   std::vector<FilePath> libPaths(libPathsString.size());
+   BOOST_FOREACH(const std::string& path, libPathsString)
+   {
+      libPaths.push_back(module_context::resolveAliasedPath(path));
+   }
+
+   return libPaths;
+}
+
+bool disablePackages()
+{
+   return !core::system::getenv("RSTUDIO_DISABLE_PACKAGES").empty();
+}
+
 // check if a package is installed
 bool isPackageInstalled(const std::string& packageName)
 {
@@ -1412,7 +1440,9 @@ bool fileListingFilter(const core::FileInfo& fileInfo)
        ext == ".rbuildignore" ||
        ext == ".rdata"    ||
        ext == ".rhistory" ||
+       ext == ".ruserdata" ||
        ext == ".renviron" ||
+       ext == ".httr-oauth" ||
        ext == ".gitignore")
    {
       return true;

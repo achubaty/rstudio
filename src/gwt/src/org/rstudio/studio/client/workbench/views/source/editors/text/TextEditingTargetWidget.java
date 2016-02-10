@@ -870,6 +870,11 @@ public class TextEditingTargetWidget
             publishButton_.setContentPath(publishPath, "");
             publishButton_.setContentType(RSConnect.CONTENT_TYPE_APP);
          }
+         else if (type == SourceDocument.XT_SHINY_SINGLE_FILE)
+         {
+            publishButton_.setContentPath(publishPath, "");
+            publishButton_.setContentType(RSConnect.CONTENT_TYPE_APP_SINGLE);
+         }
          else if (type == SourceDocument.XT_RMARKDOWN)
          {
             publishButton_.setRmd(publishPath, !isShiny_);
@@ -878,6 +883,25 @@ public class TextEditingTargetWidget
          {
             publishButton_.setContentType(RSConnect.CONTENT_TYPE_NONE);
          }
+      }
+   }
+
+   @Override
+   public void invokePublish()
+   {
+      if (publishButton_ == null)
+      {
+         // shouldn't happen in practice (we hide the publish button and 
+         // disable the command when a non-publishable item is showing in the
+         // widget) but in case it does let the user know why nothing's 
+         // happening.
+         RStudioGinjector.INSTANCE.getGlobalDisplay().showErrorMessage(
+               "Content not publishable", 
+               "This item cannot be published.");
+      }
+      else
+      {
+         publishButton_.invokePublish();
       }
    }
 
