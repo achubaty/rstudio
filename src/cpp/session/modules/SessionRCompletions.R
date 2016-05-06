@@ -197,9 +197,7 @@ assign(x = ".rs.acCompletionTypes",
                                                quote = FALSE,
                                                directoriesOnly = FALSE)
 {
-   projectPath <- .rs.getProjectDirectory()
-   hasFileMonitor <- .rs.hasFileMonitor()
-   path <- suppressWarnings(.rs.normalizePath(path))
+   path <- suppressWarnings(.rs.normalizePath(path, winslash = "/"))
    
    ## Separate the token into a 'directory' prefix, and a 'name' prefix. We need
    ## to prefix the prefix as we will need to prepend it onto completions for
@@ -261,7 +259,8 @@ assign(x = ".rs.acCompletionTypes",
    # If the directory lies within a folder that we're monitoring
    # for indexing, use that.
    cacheable <- TRUE
-   usingFileMonitor <- .rs.hasFileMonitor() &&
+   usingFileMonitor <-
+      .rs.hasFileMonitor() &&
       .rs.startsWith(directory, projDirEndsWithSlash)
    
    absolutePaths <- character()
@@ -335,6 +334,19 @@ assign(x = ".rs.acCompletionTypes",
          type <- type[isDir]
       }
    }
+   
+   # Order completions by depth
+   matches <- gregexpr("/", paths, fixed = TRUE)
+   depth <- vapply(matches, function(match) {
+      if (identical(c(match), -1L))
+         0
+      else
+         length(match)
+   }, numeric(1))
+   
+   idx <- order(depth)
+   paths <- paths[idx]
+   type <- type[idx]
    
    .rs.makeCompletions(token = token,
                        results = paths,
@@ -692,7 +704,7 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("getSourceIndexCompletions", function(token)
 {
-   .Call(.rs.routines$rs_getSourceIndexCompletions, token)
+   .Call("rs_getSourceIndexCompletions", token)
 })
 
 .rs.addFunction("getCompletionsNamespace", function(token, string, exportsOnly, envir)
@@ -809,6 +821,9 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("fuzzyMatches", function(completions, token)
 {
+   reStrip     <- "(?!^)[._]"
+   token       <- gsub(reStrip, "", token, perl = TRUE)
+   completions <- gsub(reStrip, "", completions, perl = TRUE)
    .rs.startsWith(tolower(completions), tolower(token))
 })
 
@@ -858,6 +873,19 @@ assign(x = ".rs.acCompletionTypes",
       packages <- packages[order]
       quote    <- quote[order]
       type     <- type[order]
+   }
+   
+   # Avoid generating too many completions
+   limit <- 2000
+   if (length(results) > limit)
+   {
+      cacheable <- FALSE
+      idx <- seq_len(limit)
+      
+      results  <- results[idx]
+      packages <- packages[idx]
+      quote    <- quote[idx]
+      type     <- type[idx]
    }
    
    list(token = token,
@@ -1230,7 +1258,9 @@ assign(x = ".rs.acCompletionTypes",
                                                    quote = !appendColons)
 {
    # List all directories within the .libPaths()
-   allPackages <- Reduce(union, lapply(.libPaths(), .rs.listDirs))
+   allPackages <- Reduce(union, lapply(.libPaths(), function(libPath) {
+      .rs.listDirs(libPath, full.names = FALSE, recursive = FALSE)
+   }))
    
    # Not sure why 'DESCRIPTION' might show up here, but let's take it out
    allPackages <- setdiff(allPackages, "DESCRIPTION")
@@ -1351,7 +1381,7 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("getNAMESPACEImportedSymbols", function(documentId)
 {
-   .Call(.rs.routines$rs_getNAMESPACEImportedSymbols, documentId)
+   .Call("rs_getNAMESPACEImportedSymbols", documentId)
 })
 
 .rs.addFunction("getCompletionsNAMESPACE", function(token, documentId)
@@ -1362,7 +1392,6 @@ assign(x = ".rs.acCompletionTypes",
       return(.rs.emptyCompletions())
    
    n <- vapply(symbols, function(x) length(x[[1]]), USE.NAMES = FALSE, FUN.VALUE = numeric(1))
-   total <- sum(n)
    
    output <- list(
       exports = unlist(lapply(symbols, `[[`, "exports"), use.names = FALSE),
@@ -1382,7 +1411,10 @@ assign(x = ".rs.acCompletionTypes",
 .rs.addFunction("getCompletionsSearchPath", function(token,
                                                      overrideInsertParens = FALSE)
 {
-   objects <- .rs.objectsOnSearchPath(token, TRUE)
+   objects <- if (.rs.startsWith(token, "."))
+      .rs.objectsOnSearchPath(".")
+   else
+      .rs.objectsOnSearchPath()
    
    objects[["keywords"]] <- c(
       "NULL", "NA", "TRUE", "FALSE", "T", "F", "Inf", "NaN",
@@ -1444,7 +1476,7 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("finishExpression", function(string)
 {
-   .Call(.rs.routines$rs_finishExpression, as.character(string))
+   .Call("rs_finishExpression", as.character(string))
 })
 
 .rs.addFunction("getCompletionsAttr", function(token,
@@ -1479,7 +1511,7 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("isBrowserActive", function()
 {
-   .Call(.rs.routines$rs_isBrowserActive)
+   .Call("rs_isBrowserActive")
 })
 
 # NOTE: This function attempts to find an active frame (if
@@ -1517,6 +1549,9 @@ assign(x = ".rs.acCompletionTypes",
       names(x[[interface]])
    })
    
+   if (is.null(names(dynRoutineNames)))
+      return(.rs.emptyCompletions())
+   
    dynResults <- .rs.namedVectorAsList(dynRoutineNames)
    dynIndices <- .rs.fuzzyMatches(dynResults$values, token)
    
@@ -1552,7 +1587,7 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("getKnitParamsForDocument", function(documentId)
 {
-   .Call(.rs.routines$rs_getKnitParamsForDocument, documentId)
+   .Call("rs_getKnitParamsForDocument", documentId)
 })
 
 .rs.addFunction("knitParams", function(content)
@@ -1744,7 +1779,12 @@ assign(x = ".rs.acCompletionTypes",
    if (length(string) && 
        string[[1]] %in% c(".Call", ".C", ".Fortran", ".External") &&
        numCommas[[1]] == 0)
-      return(.rs.getCompletionsNativeRoutine(token, string[[1]]))
+   {
+      completions <- .rs.appendCompletions(
+         .rs.getCompletionsNativeRoutine(token, string[[1]]),
+         .rs.getCompletionsSearchPath(token))
+      return(completions)
+   }
    
    # data
    if (.rs.acContextTypes$FUNCTION %in% type &&
@@ -2388,6 +2428,26 @@ assign(x = ".rs.acCompletionTypes",
       error = function(e) NULL
    )
    
+   # workaround for devtools::load_all() clobbering the
+   # namespace imports
+   if (length(importCompletions) && is.null(names(importCompletions))) {
+      try({
+         env <- new.env(parent = emptyenv())
+         for (el in importCompletions) {
+            # Length one element: get all exports from that package
+            if (length(el) == 1) {
+               env[[el]] <- c(env[[el]], getNamespaceExports(asNamespace(el)))
+            }
+            
+            # Length >1 element: 'importFrom()'.
+            else if (length(el) > 1) {
+               env[[el]] <- c(env[[el]], tail(el, n = -1))
+            }
+         }
+         importCompletions <- as.list(env)
+      }, silent = TRUE)
+   }
+   
    # remove 'base' element if it's just TRUE
    if (length(importCompletions))
    {
@@ -2396,7 +2456,7 @@ assign(x = ".rs.acCompletionTypes",
    }
    
    # if we have import completions, use them
-   if (length(importCompletions))
+   if (length(importCompletions) && !is.null(names(importCompletions)))
    {
       importCompletionsList <- .rs.namedVectorAsList(importCompletions)
       
@@ -2843,13 +2903,13 @@ assign(x = ".rs.acCompletionTypes",
 
 .rs.addFunction("listInferredPackages", function(documentId)
 {
-   .Call(.rs.routines$rs_listInferredPackages, documentId)
+   .Call("rs_listInferredPackages", documentId)
 })
 
 .rs.addFunction("getInferredCompletions", function(packages = character(),
                                                    simplify = TRUE)
 {
-   result <- .Call(.rs.routines$rs_getInferredCompletions, as.character(packages))
+   result <- .Call("rs_getInferredCompletions", as.character(packages))
    if (simplify && length(result) == 1)
       return(result[[1]])
    result

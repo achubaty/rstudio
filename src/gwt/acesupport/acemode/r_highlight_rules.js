@@ -64,7 +64,7 @@ define("mode/r_highlight_rules", ["require", "exports", "module"], function(requ
       rules["#comment"] = [
          {
             token : "comment.sectionhead",
-            regex : "#+(?!')(?:[^-=#]).*(?:----|====|####)\\s*$",
+            regex : "#+(?!').*(?:----|====|####)\\s*$",
             next  : "start"
          },
          {
@@ -213,7 +213,7 @@ define("mode/r_highlight_rules", ["require", "exports", "module"], function(requ
          },
          {
             token : "keyword.operator",
-            regex : ":::|::|:=|%%|>=|<=|==|!=|\\->|<\\-|<<\\-|\\|\\||&&|=|\\+|\\-|\\*|/|\\^|>|<|!|&|\\||~|\\$|:|@",
+            regex : ":::|::|:=|%%|>=|<=|==|!=|\\->|<\\-|<<\\-|\\|\\||&&|=|\\+|\\-|\\*\\*?|/|\\^|>|<|!|&|\\||~|\\$|:|@",
             merge : false,
             next  : "start"
          },

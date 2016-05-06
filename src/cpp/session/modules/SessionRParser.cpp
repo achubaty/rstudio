@@ -773,10 +773,19 @@ void handleIdentifier(RTokenCursor& cursor,
    // TODO: Handle namespaced symbols (e.g. for package lookup) and
    // provide lint appropriately.
    if (isExtractionOperator(cursor.previousSignificantToken()) ||
-       isNamespace(cursor.nextSignificantToken()))
+       isNamespaceExtractionOperator(cursor.nextSignificantToken()))
    {
       DEBUG("--- Symbol preceded by extraction op; not adding");
       return;
+   }
+   
+   // If we're in a call to e.g. 'data(foo)', assume that this
+   // call will succeed, and add a reference to a symbol 'foo'.
+   if (cursor.previousSignificantToken(1).isType(RToken::LPAREN))
+   {
+      const RToken& callToken = cursor.previousSignificantToken(2);
+      if (callToken.isType(RToken::ID) && callToken.contentEquals(L"data"))
+         status.node()->addDefinedSymbol(cursor);
    }
    
    // Don't add references to '.' -- in most situations where it's used,
@@ -1444,16 +1453,27 @@ bool closesArgumentList(const RTokenCursor& cursor,
 void checkBinaryOperatorWhitespace(RTokenCursor& cursor,
                                    ParseStatus& status)
 {
+   
+   // Allow both whitespace styles for certain binary operators, but
+   // ensure that the whitespace around is consistent.
+   if (cursor.contentEquals(L'/') ||
+       cursor.contentEquals(L'*') ||
+       cursor.contentEquals(L'^') ||
+       cursor.contentEquals(L"**"))
+   {
+      bool lhsWhitespace = isWhitespace(cursor.previousToken());
+      bool rhsWhitespace = isWhitespace(cursor.nextToken());
+      
+      if (lhsWhitespace != rhsWhitespace)
+         status.lint().inconsistentWhitespaceAroundOperator(cursor);
+      return;
+   }
+   
    // There should not be whitespace around extraction operators.
    //
    //    x $ foo
    //
    // is bad style.
-   
-   // Allow 'both' styles for division, multiplication
-   if (cursor.contentEquals(L'/') || cursor.contentEquals(L'*'))
-      return;
-   
    bool isExtraction = isExtractionOperator(cursor);
    bool isColon = cursor.contentEquals(L':');
    if (isExtraction || isColon)
@@ -1705,41 +1725,69 @@ void validateFunctionCall(RTokenCursor cursor,
 //
 //    foo$bar$log(1 + y) + log(2 + y) ~ ({1 ~ 2}) ^ 5
 //
+// and so, effectively, this needs to be a mini-parser of R
+// code.
 bool skipFormulas(RTokenCursor& origin, ParseStatus& status)
 {
    RTokenCursor cursor = origin.clone();
-
    bool foundTilde = false;
-   
-   while (cursor.moveToEndOfEvaluation())
+
+   while (!cursor.isAtEndOfDocument())
    {
+      // Initial unary operators
+      while (isValidAsUnaryOperator(cursor))
+      {
+         if (cursor.contentEquals(L"~"))
+            foundTilde = true;
+
+         if (!cursor.moveToNextSignificantToken())
+            break;
+      }
+
+      // Stand-alone bracketed scopes
+      if (isLeftBracket(cursor))
+         if (!cursor.fwdToMatchingToken())
+            return false;
+
+      // Check for end of statement
+      if (cursor.isAtEndOfStatement(status.isInParentheticalScope()))
+         break;
+
+      // Expecting a symbol or right bracket
       if (!cursor.moveToNextSignificantToken())
+         break;
+
+      // Function calls
+      while (isLeftBracket(cursor))
+      {
+         if (!cursor.fwdToMatchingToken())
+            return false;
+
+         if (cursor.isAtEndOfStatement(status.isInParentheticalScope()))
+            break;
+         
+         if (!cursor.moveToNextSignificantToken())
+            break;
+      }
+
+      // Binary operator or bust
+      if (!isBinaryOp(cursor))
          break;
 
       if (cursor.contentEquals(L"~"))
          foundTilde = true;
-      
-      while (cursor.fwdToMatchingToken())
-         if (!cursor.moveToNextSignificantToken())
-            break;
-      
-      if (!cursor.moveToNextSignificantToken())
-         break;
-      
-      while (cursor.fwdToMatchingToken())
-         if (!cursor.moveToNextSignificantToken())
-            break;
 
-      if (!isBinaryOp(cursor))
-         break;
-
+      // Step over the operator and start again
       if (!cursor.moveToNextSignificantToken())
          break;
    }
-   
+
    if (foundTilde)
+   {
+      DEBUG("Skipped formula: " << origin.currentToken() << " --> " << cursor.currentToken());
       origin.setOffset(cursor.offset());
-   
+   }
+
    return foundTilde;
 }
 
@@ -1946,9 +1994,14 @@ START:
       checkIncorrectComparison(cursor, status);
       
       // We want to skip over formulas if necessary.
-      if (skipFormulas(cursor, status))
+      while (skipFormulas(cursor, status))
+      {
          if (cursor.isAtEndOfDocument())
             return;
+         
+         if (!cursor.moveToNextSignificantToken())
+            return;
+      }
       
       DEBUG("Start: " << cursor);
       // Move over unary operators -- any sequence is valid,

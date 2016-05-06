@@ -24,6 +24,7 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.gwt.user.client.ui.PopupPanel.PositionCallback;
 import com.google.inject.Inject;
 import com.google.inject.Provider;
+
 import org.rstudio.core.client.cellview.ColumnSortInfo;
 import org.rstudio.core.client.command.AppCommand;
 import org.rstudio.core.client.files.FileSystemItem;
@@ -42,6 +43,7 @@ import org.rstudio.studio.client.workbench.model.RemoteFileSystemContext;
 import org.rstudio.studio.client.workbench.model.Session;
 import org.rstudio.studio.client.workbench.model.SessionInfo;
 import org.rstudio.studio.client.workbench.ui.WorkbenchPane;
+import org.rstudio.studio.client.workbench.views.console.shell.assist.PopupPositioner;
 import org.rstudio.studio.client.workbench.views.files.model.DirectoryListing;
 import org.rstudio.studio.client.workbench.views.files.model.FileChange;
 import org.rstudio.studio.client.workbench.views.files.model.PendingFileUpload;
@@ -129,7 +131,7 @@ public class FilesPane extends WorkbenchPane implements Files.Display
                // if we're in someone else's project, disable paths above
                // the project
                SessionInfo si = session_.getSessionInfo();
-               if (si.getActiveProjectDir() != null && !si.isProjectOwner())
+               if (si.getActiveProjectDir() != null && !si.projectParentBrowseable())
                   lastBrowseable = si.getActiveProjectDir().getPath();
             }
                
@@ -223,13 +225,13 @@ public class FilesPane extends WorkbenchPane implements Files.Display
        
        menu.addItem(new MenuItem(editLabel, true, onEdit));
        menu.addItem(new MenuItem(openLabel, true, onBrowse));
-      
+       
        menu.setPopupPositionAndShow(new PositionCallback() {
           @Override
           public void setPosition(int offsetWidth, int offsetHeight)
           {
              Event event = Event.getCurrentEvent();
-             menu.setPopupPosition(event.getClientX(), event.getClientY());     
+             PopupPositioner.setPopupPosition(menu, event.getClientX(), event.getClientY());
           }
        });
    }
@@ -258,6 +260,10 @@ public class FilesPane extends WorkbenchPane implements Files.Display
          needsInit = false;
          FileSystemItem home = FileSystemItem.home();
          observer_.onFileNavigation(home);
+      }
+      else
+      {
+         filesList_.redraw();
       }
    }
 

@@ -68,6 +68,7 @@
 #include <core/text/TemplateFilter.hpp>
 #include <core/r_util/RSessionContext.hpp>
 #include <core/r_util/REnvironment.hpp>
+#include <core/WaitUtils.hpp>
 
 #include <r/RJsonRpc.hpp>
 #include <r/RExec.hpp>
@@ -145,6 +146,7 @@ extern "C" const char *locale2charset(const char *);
 #include "modules/overlay/SessionOverlay.hpp"
 #include "modules/presentation/SessionPresentation.hpp"
 #include "modules/rmarkdown/SessionRMarkdown.hpp"
+#include "modules/rmarkdown/SessionRmdNotebook.hpp"
 #include "modules/shiny/SessionShiny.hpp"
 #include "modules/viewer/SessionViewer.hpp"
 #include "modules/SessionDiagnostics.hpp"
@@ -520,8 +522,8 @@ void handleClientInit(const boost::function<void()>& initFunction,
       sessionInfo["project_open_docs"] = projects::projectContext().openDocs();
       sessionInfo["project_supports_sharing"] = 
          projects::projectContext().supportsSharing();
-      sessionInfo["project_owned_by_user"] = 
-         projects::projectContext().ownedByUser();
+      sessionInfo["project_parent_browseable"] = 
+         projects::projectContext().parentBrowseable();
       sessionInfo["project_user_data_directory"] =
        module_context::createAliasedPath(getProjectUserDataDir(ERROR_LOCATION));
 
@@ -567,6 +569,9 @@ void handleClientInit(const boost::function<void()>& initFunction,
       std::string type = projects::projectContext().config().buildType;
       sessionInfo["build_tools_type"] = type;
 
+      sessionInfo["build_tools_bookdown_website"] =
+                              module_context::isBookdownWebsite();
+
       FilePath buildTargetDir = projects::projectContext().buildTargetPath();
       if (!buildTargetDir.empty())
       {
@@ -589,6 +594,7 @@ void handleClientInit(const boost::function<void()>& initFunction,
    else
    {
       sessionInfo["build_tools_type"] = r_util::kBuildTypeNone;
+      sessionInfo["build_tools_bookdown_website"] = false;
       sessionInfo["build_target_dir"] = json::Value();
       sessionInfo["has_pkg_src"] = false;
       sessionInfo["has_pkg_vig"] = false;
@@ -680,6 +686,17 @@ void handleClientInit(const boost::function<void()>& initFunction,
    sessionInfo["user_home_page_url"] = json::Value();
    
    sessionInfo["r_addins"] = modules::r_addins::addinRegistryAsJson();
+
+   std::string sessionId = module_context::activeSession().id();
+   if (sessionId.empty())
+   {
+      // create virtual session ID if we don't have an explicitly assigned ID
+      sessionId = resumed ?
+         rsession::persistentState().virtualSessionId() :
+         rsession::persistentState().newVirtualSessionId();
+
+   }
+   sessionInfo["session_id"] = sessionId;
 
    module_context::events().onSessionInfo(&sessionInfo);
 
@@ -1500,25 +1517,39 @@ void addToConsoleInputBuffer(const rstudio::r::session::RConsoleInput& consoleIn
       std::string line(*lineIter);
 
       // add to buffer
-      s_consoleInputBuffer.push(line);
+      s_consoleInputBuffer.push(rstudio::r::session::RConsoleInput(
+               line, consoleInput.console));
    }
 }
 
 // extract console input -- can be either null (user hit escape) or a string
 Error extractConsoleInput(const json::JsonRpcRequest& request)
 {
-   if (request.params.size() == 1)
+   if (request.params.size() == 2)
    {
+      // ensure the caller specified the requesting console
+      std::string console;
+      if (request.params[1].type() == json::StringType)
+      {
+         console = request.params[1].get_str();
+      }
+      else
+      {
+         return Error(json::errc::ParamTypeMismatch, ERROR_LOCATION);
+      }
+
+      // extract the requesting console
       if (request.params[0].is_null())
       {
-         addToConsoleInputBuffer(rstudio::r::session::RConsoleInput());
+         addToConsoleInputBuffer(rstudio::r::session::RConsoleInput(console));
          return Success();
       }
       else if (request.params[0].type() == json::StringType)
       {
          // get console input to return to R
          std::string text = request.params[0].get_str();
-         addToConsoleInputBuffer(rstudio::r::session::RConsoleInput(text));
+         addToConsoleInputBuffer(rstudio::r::session::RConsoleInput(text, 
+                  console));
 
          // return success
          return Success();
@@ -1580,6 +1611,20 @@ Error startHttpConnectionListener()
 {
    initializeHttpConnectionListener();
    return httpConnectionListener().start();
+}
+
+WaitResult startHttpConnectionListenerWithTimeout()
+{
+   Error error = startHttpConnectionListener();
+
+   // When the rsession restarts, it may take a few ms for the port to become
+   // available; therefore, retry connection, but only for address_in_use error
+   if (!error)
+       return WaitResult(WaitSuccess, Success());
+   else if (error.code() != boost::system::errc::address_in_use)
+      return WaitResult(WaitError, error);
+   else
+      return WaitResult(WaitContinue, error);
 }
 
 Error startClientEventService()
@@ -1763,6 +1808,7 @@ Error rInit(const rstudio::r::session::RInitInfo& rInitInfo)
       (modules::profiler::initialize)
       (modules::viewer::initialize)
       (modules::rmarkdown::initialize)
+      (modules::rmarkdown::notebook::initialize)
       (modules::rpubs::initialize)
       (modules::shiny::initialize)
       (modules::source::initialize)
@@ -1948,6 +1994,15 @@ void setExecuting(bool executing)
    module_context::activeSession().setExecuting(executing);
 }
 
+void enqueueConsoleInput(const rstudio::r::session::RConsoleInput& input)
+{
+   json::Object data;
+   data[kConsoleText] = input.text + "\n";
+   data[kConsoleId]   = input.console;
+   ClientEvent inputEvent(kConsoleWriteInput, data);
+   rsession::clientEventQueue().add(inputEvent);
+}
+
 bool rConsoleRead(const std::string& prompt,
                   bool addToHistory,
                   rstudio::r::session::RConsoleInput* pConsoleInput)
@@ -1995,7 +2050,7 @@ bool rConsoleRead(const std::string& prompt,
       if (error)
       {
          LOG_ERROR(error);
-         *pConsoleInput = rstudio::r::session::RConsoleInput("");
+         *pConsoleInput = rstudio::r::session::RConsoleInput("", "");
       }
       *pConsoleInput = s_consoleInputBuffer.front();
       s_consoleInputBuffer.pop();
@@ -2011,10 +2066,16 @@ bool rConsoleRead(const std::string& prompt,
    // we are about to return input to r so set the flag indicating that state
    setExecuting(true);
 
+   // ensure that output resulting from this input goes to the correct console
+   if (rsession::clientEventQueue().setActiveConsole(pConsoleInput->console))
+   {
+      module_context::events().onActiveConsoleChanged(pConsoleInput->console,
+            pConsoleInput->text);
+   }
+
    ClientEvent promptEvent(kConsoleWritePrompt, prompt);
    rsession::clientEventQueue().add(promptEvent);
-   ClientEvent inputEvent(kConsoleWriteInput, pConsoleInput->text + "\n");
-   rsession::clientEventQueue().add(inputEvent);
+   enqueueConsoleInput(*pConsoleInput);
 
    // always return true (returning false causes the process to exit)
    return true;
@@ -3199,7 +3260,7 @@ int main (int argc, char * const argv[])
          return sessionExitFailure(error, ERROR_LOCATION);
          
       // start http connection listener
-      error = startHttpConnectionListener();
+      error = waitWithTimeout(startHttpConnectionListenerWithTimeout, 0, 100, 1);
       if (error)
          return sessionExitFailure(error, ERROR_LOCATION);
 

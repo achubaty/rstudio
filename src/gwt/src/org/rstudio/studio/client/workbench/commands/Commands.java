@@ -30,6 +30,7 @@ public abstract class
    // Source
    public abstract AppCommand reformatCode();
    public abstract AppCommand newSourceDoc();
+   public abstract AppCommand newRNotebook();
    public abstract AppCommand newTextDoc();
    public abstract AppCommand newCppDoc();
    public abstract AppCommand newSweaveDoc();
@@ -62,6 +63,7 @@ public abstract class
    public abstract AppCommand insertChunk();
    public abstract AppCommand insertSection();
    public abstract AppCommand executePreviousChunks();
+   public abstract AppCommand executeSubsequentChunks();
    public abstract AppCommand executeCurrentChunk();
    public abstract AppCommand executeNextChunk();
    public abstract AppCommand executeSetupChunk();
@@ -92,6 +94,7 @@ public abstract class
    public abstract AppCommand vcsFileRevert();
    public abstract AppCommand popoutDoc();
    public abstract AppCommand returnDocToMain();
+   public abstract AppCommand quickAddNext();
    public abstract AppCommand findReplace();
    public abstract AppCommand findNext();
    public abstract AppCommand findPrevious();
@@ -126,9 +129,15 @@ public abstract class
    public abstract AppCommand findUsages();
    public abstract AppCommand editRmdFormatOptions();
    public abstract AppCommand knitWithParameters();
-   public abstract AppCommand renameInFile();
+   public abstract AppCommand notebookExpandAllOutput();
+   public abstract AppCommand notebookCollapseAllOutput();
+   public abstract AppCommand notebookClearAllOutput();
+   public abstract AppCommand renameInScope();
    public abstract AppCommand insertRoxygenSkeleton();
    public abstract AppCommand insertSnippet();
+   public abstract AppCommand yankBeforeCursor();
+   public abstract AppCommand yankAfterCursor();
+   public abstract AppCommand pasteLastYank();
  
    // Projects
    public abstract AppCommand newProject();
@@ -161,6 +170,8 @@ public abstract class
    public abstract AppCommand consoleClear();
    public abstract AppCommand interruptR();
    public abstract AppCommand restartR();
+   public abstract AppCommand restartRClearOutput();
+   public abstract AppCommand restartRRunAllChunks();
    public abstract AppCommand terminateR();
    public abstract AppCommand activateConsole();
    public abstract AppCommand layoutZoomConsole();
@@ -319,6 +330,12 @@ public abstract class
    public abstract AppCommand showProfiler();
    public abstract AppCommand startProfiler();
    public abstract AppCommand stopProfiler();
+   public abstract AppCommand profileCode();
+   public abstract AppCommand profileCodeWithoutFocus();
+   public abstract AppCommand saveProfileAs();
+   public abstract AppCommand openProfile();
+   public abstract AppCommand profileHelp();
+   public abstract AppCommand gotoProfileSource();
    
    // Tools
    public abstract AppCommand showShellDialog();
@@ -367,6 +384,7 @@ public abstract class
 
    // Application
    public abstract AppCommand newSession();
+   public abstract AppCommand suspendSession();
    public abstract AppCommand quitSession();
    public abstract AppCommand updateCredentials();
    public abstract AppCommand diagnosticsReport();
@@ -468,6 +486,7 @@ public abstract class
    public abstract AppCommand layoutConsoleOnRight();
    public abstract AppCommand paneLayout();
    public abstract AppCommand maximizeConsole();
+   public abstract AppCommand toggleEditorTokenInfo();
    
    public static final String KEYBINDINGS_PATH =
          "~/.R/keybindings/rstudio_commands.json";

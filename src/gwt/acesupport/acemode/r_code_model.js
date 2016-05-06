@@ -758,15 +758,12 @@ var RCodeModel = function(session, tokenizer,
       // Nudge the maxRow ahead a bit -- some functions may request
       // the tree to be built up to a particular row, but we want to
       // build a bit further ahead in case some lookahead is required.
-      maxRow = Math.min(
-         maxRow + 30,
-         this.$doc.getLength() - 1
-      );
+      maxRow = Math.min(maxRow + 30, this.$doc.getLength() - 1);
 
       // Check if the scope tree has already been built up to this row.
       var scopeRow = this.$scopes.parsePos.row;
       if (scopeRow >= maxRow)
-          return;
+          return scopeRow;
 
       // We explicitly use a TokenIterator rather than a TokenCursor here.
       // We want to iterate over all token types here (including non-R code)
@@ -778,22 +775,31 @@ var RCodeModel = function(session, tokenizer,
       // of the tree that have been already built.
       var iterator = new TokenIterator(this.$session);
 
+      // Tokenize eagerly up to the desired row. Note that we have to tokenize
+      // in two places -- the internal Ace tokenizer (whose tokens are used by
+      // the token iterator here), and also the R code model's tokenizer (which
+      // maintains its own set of R tokens used for indentation). In a perfect
+      // world, we wouldn't maintain a separate set of tokens for our R code
+      // model, but ...
+      iterator.tokenizeUpToRow(maxRow);
+      this.$tokenizeUpToRow(maxRow);
+      
+
       var row = this.$scopes.parsePos.row;
       var column = this.$scopes.parsePos.column;
-
       iterator.moveToPosition({row: row, column: column}, true);
 
       var token = iterator.getCurrentToken();
       
       // If this failed, give up.
       if (token == null)
-         return;
+         return row;
 
       // Grab local state that we'll use when building the scope tree.
       var value = token.value;
       var type = token.type;
       var position = iterator.getCurrentTokenPosition();
-      
+
       do
       {
          // Bail if we've stepped past the max row.
@@ -889,8 +895,23 @@ var RCodeModel = function(session, tokenizer,
          // sections following later in the document.
          else if (isInRMode && /\bsectionhead\b/.test(type))
          {
-            var sectionHeadMatch = /^#+'?[-=#\s]*(.*?)\s*[-=#]+\s*$/.exec(value);
-            var label = sectionHeadMatch[1];
+            // Extract the section name from the header. These
+            // have the form e.g.
+            // 
+            //    # Foo ----
+            //
+            // but note that the section name can be empty, and e.g.
+            // 
+            //    #####
+            //
+            // is accepted for folding purposes.
+            var label = "(Untitled)";
+            var matchStart = /[^#=-\s]/.exec(value);
+            if (matchStart) {
+               label = value.substr(matchStart.index);
+               label = label.replace(/\s*[#=-]+\s*$/, "");
+            }
+
             this.$scopes.onSectionHead(label, position);
          }
 
@@ -992,23 +1013,44 @@ var RCodeModel = function(session, tokenizer,
             var tokenCursor = this.getTokenCursor();
             tokenCursor.moveToPosition(position, true);
             var localCursor = tokenCursor.cloneCursor();
-            var bracePos = localCursor.currentPosition();
             
             var startPos;
             if (findAssocFuncToken(localCursor))
             {
                var argsCursor = localCursor.cloneCursor();
                argsCursor.moveToNextToken();
-               var argsStartPos = argsCursor.currentPosition();
 
                var functionName = null;
                if (moveFromFunctionTokenToEndOfFunctionName(localCursor))
                {
                   var functionEndCursor = localCursor.cloneCursor();
-                  if (localCursor.findStartOfEvaluationContext())
+                  var functionStartCursor = localCursor.cloneCursor();
+                  if (functionStartCursor.findStartOfEvaluationContext())
                   {
-                     var functionStartPos = localCursor.currentPosition();
-                     var functionEndPos = functionEndCursor.currentPosition();
+                     var functionStartPos = functionStartCursor.currentPosition();
+                     var functionEndPos   = functionEndCursor.currentPosition();
+
+                     // Only include text on the same line. This avoids cases
+                     // where e.g. someone might write
+                     //
+                     //     env$|
+                     //
+                     //     # This is a function
+                     //     foo <- function(x) { ... }
+                     //
+                     // It's more likely that the user was just typing a new
+                     // statement above than adding on to that function definition;
+                     // we should be conservative in looking backwards over comments
+                     // when providing that scope.
+                     if (functionStartPos.row !== functionEndPos.row) {
+                        functionStartPos.row = functionEndPos.row;
+                        functionStartPos.column = 0;
+                        localCursor.$row = functionStartPos.row;
+                        localCursor.$offset = 0;
+                     } else {
+                        localCursor.moveToPosition(functionStartPos, true);
+                     }
+
                      functionName = this.$doc.getTextRange(new Range(
                         functionStartPos.row,
                         functionStartPos.column,
@@ -1067,6 +1109,7 @@ var RCodeModel = function(session, tokenizer,
          row: rowTokenizedUpTo, column: -1
       };
 
+      return rowTokenizedUpTo;
    };
 
    this.$getFoldToken = function(session, foldStyle, row) {
@@ -1077,8 +1120,9 @@ var RCodeModel = function(session, tokenizer,
 
       var rowTokens = this.$tokens[row];
 
-      if (rowTokens.length == 1 && /\bsectionhead\b/.test(rowTokens[0].type))
-         return rowTokens[0];
+      for (var i = 0; i < rowTokens.length; i++)
+         if (/\bsectionhead\b/.test(rowTokens[i].type))
+            return rowTokens[i];
 
       var depth = 0;
       var unmatchedOpen = null;
@@ -1192,23 +1236,66 @@ var RCodeModel = function(session, tokenizer,
          return;
       }
       else if (/\bsectionhead\b/.test(foldToken.type)) {
-         var match = /([-=#])\1+\s*$/.exec(foldToken.value);
-         if (!match)
-            return;  // this would be surprising
+         
+         // Find the position of the section 'tail'.
+         var line = session.getLine(row);
 
-         pos.column += match.index - 1; // Not actually sure why -1 is needed
-         var tokenIterator3 = new TokenIterator(session, row, 0);
-         var lastRow = row;
-         for (var tok3; tok3 = tokenIterator3.stepForward(); ) {
-            if (/\bsectionhead\b/.test(tok3.type)) {
-               break;
-            }
-            lastRow = tokenIterator3.getCurrentTokenRow();
+         // For unnamed sections, use the end of the line.
+         // Otherwise, consume the '----' tail of the section
+         // header as well.
+         var index;
+         if (/^\s*[#=-]+\s*$/.test(line)) {
+            index = line.length;
+         } else {
+            var match = /[#=-]+\s*$/.exec(line);
+            if (!match)
+               return;
+            index = match.index;
          }
 
-         return Range.fromPoints(
-               pos,
-               {row: lastRow, column: session.getLine(lastRow).length});
+         // Use this index as the column for our opening fold.
+         pos.column = index;
+
+         // Use a token iterator and find the next section head.
+         // We fold up to that section head.
+         var it = new TokenIterator(session, row + 1);
+
+         // This has the effect of ensuring that the next call to
+         // 'stepForward()' places the iterator on the first token
+         // on this row.
+         it.$tokenIndex = -1;
+
+         while (token = it.stepForward())
+         {
+            // Check to see if we've found something that can close
+            // our section head. If so, we're done.
+             if (token.value === "}" ||
+                /\bsectionhead\b/.test(token.type) ||
+                /\bcode(?:begin|end)/.test(token.type))
+             {
+                break;
+             }
+
+             // Walk over matching braces -- this allows us to
+             // e.g. skip function definitions (and hence, any
+             // sub-sections within those functions).
+             if (it.fwdToMatchingToken())
+                continue;
+         }
+
+         // If we discovered another section head, we fold up to
+         // the previous row; otherwise, we fold the whole document.
+         var row = it.getCurrentTokenRow();
+         if (token)
+            row--;
+
+         var startPos = pos;
+         var endPos = {
+            row: row,
+            column: session.getLine(row).length
+         };
+
+         return Range.fromPoints(startPos, endPos);
       }
 
       return;

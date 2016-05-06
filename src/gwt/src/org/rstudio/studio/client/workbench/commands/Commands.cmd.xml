@@ -40,6 +40,8 @@ well as menu structures (for main menu and popup menus).
          <menu label="New _File">
             <cmd refid="newSourceDoc"/>
             <separator/>
+            <cmd refid="newRNotebook"/>
+            <separator/>
             <cmd refid="newRMarkdownDoc"/>
             <cmd refid="newRShinyApp"/>
             <separator/>
@@ -143,6 +145,11 @@ well as menu structures (for main menu and popup menus).
             <cmd refid="unfoldAll"/>
          </menu>
          <separator/>
+         <cmd refid="notebookExpandAllOutput"/>
+         <cmd refid="notebookCollapseAllOutput"/>
+         <separator/>
+         <cmd refid="notebookClearAllOutput"/>
+         <separator/>
          <cmd refid="goToLine"/>
          <separator/>
          <cmd refid="findReplace"/>
@@ -180,7 +187,7 @@ well as menu structures (for main menu and popup menus).
          <separator/>
          <cmd refid="extractFunction"/>
          <cmd refid="extractLocalVariable"/>
-         <cmd refid="renameInFile"/>
+         <cmd refid="renameInScope"/>
          <separator/>
          <cmd refid="reflowComment"/>
          <cmd refid="commentUncomment"/>
@@ -194,6 +201,7 @@ well as menu structures (for main menu and popup menus).
          <menu label="Run Regi_on">
             <cmd refid="executeSetupChunk"/>
             <cmd refid="executePreviousChunks"/>
+            <cmd refid="executeSubsequentChunks"/>
             <cmd refid="executeCurrentChunk"/>
             <cmd refid="executeNextChunk"/>
             <cmd refid="executeToCurrentLine"/>
@@ -203,7 +211,6 @@ well as menu structures (for main menu and popup menus).
             <separator/>
             <cmd refid="executeAllCode"/>
          </menu>
-
          <separator/>
          <cmd refid="sourceActiveDocument"/>
          <cmd refid="sourceActiveDocumentWithEcho"/>
@@ -298,9 +305,12 @@ well as menu structures (for main menu and popup menus).
          <cmd refid="newSession"/>
          <separator/>
          <cmd refid="interruptR"/>
-         <cmd refid="restartR"/>
-         <separator/>
          <cmd refid="terminateR"/>
+         <cmd refid="suspendSession"/>
+         <separator/>
+         <cmd refid="restartR"/>
+         <cmd refid="restartRClearOutput"/>
+         <cmd refid="restartRRunAllChunks"/>
          <separator/>
          <menu label="Set _Working Directory">
             <cmd refid="setWorkingDirToProjectDir"/>
@@ -354,11 +364,19 @@ well as menu structures (for main menu and popup menus).
             <cmd refid="errorsBreak"/>
          </menu>
          <separator/>
-         <cmd refid="showProfiler"/>
+         <cmd refid="debugHelp"/>
+      </menu>
+
+      <menu label="_Profile">
          <cmd refid="startProfiler"/>
          <cmd refid="stopProfiler"/>
          <separator/>
-         <cmd refid="debugHelp"/>
+         <cmd refid="profileCode"/>
+         <separator/>
+         <cmd refid="openProfile"/>
+         <cmd refid="saveProfileAs"/>
+         <separator/>
+         <cmd refid="profileHelp"/>
       </menu>
 
       <separator/>
@@ -466,6 +484,8 @@ well as menu structures (for main menu and popup menus).
             <cmd refid="updateCredentials"/>
             <cmd refid="diagnosticsReport"/>
             <separator/>
+            <cmd refid="toggleEditorTokenInfo"/>
+            <separator/>
             <cmd refid="debugDumpContents"/>
             <cmd refid="debugImportDump"/>
             <cmd refid="raiseException"/>
@@ -506,7 +526,7 @@ well as menu structures (for main menu and popup menus).
          <shortcut refid="reflowComment" value="Cmd+Shift+/" if="!(org.rstudio.core.client.BrowseCap.isMacintosh() &amp;&amp; org.rstudio.core.client.BrowseCap.isChrome())"/>
          <shortcut refid="reflowComment" value="Cmd+Alt+Shift+/" if="org.rstudio.core.client.BrowseCap.isMacintosh() &amp;&amp; org.rstudio.core.client.BrowseCap.isChrome()"/>
          <shortcut refid="reformatCode" value="Cmd+Shift+A"/>
-         <shortcut refid="showDiagnosticsProject" value="Cmd+Shift+Alt+P"/>
+         <shortcut refid="showDiagnosticsProject" value="Cmd+Shift+Alt+D"/>
          <shortcut refid="fold" value="Alt+L" if="!org.rstudio.core.client.BrowseCap.isMacintosh()" title="Collapse Fold"/>
          <shortcut refid="fold" value="Cmd+Alt+L" if="org.rstudio.core.client.BrowseCap.isMacintosh()" title="Collapse Fold"/>
          <shortcut refid="unfold" value="Shift+Alt+L" if="!org.rstudio.core.client.BrowseCap.isMacintosh()" title="Expand Fold"/>
@@ -520,13 +540,13 @@ well as menu structures (for main menu and popup menus).
          <shortcut value="Alt+Down" title="Move Lines Down" />
          <shortcut value="Ctrl+D" title="Delete Line" if="!org.rstudio.core.client.BrowseCap.isMacintosh()" />
          <shortcut value="Cmd+D" title="Delete Line" if="org.rstudio.core.client.BrowseCap.isMacintosh()" />
-         <shortcut value="Ctrl+U" title="Yank Line Up to Cursor" />
-         <shortcut value="Ctrl+K" title="Yank Line After Cursor" />
-         <shortcut value="Ctrl+Y" title="Insert Yanked Text" />
+         <shortcut refid="yankBeforeCursor" value="Ctrl+U" title="Yank Line Up to Cursor" />
+         <shortcut refid="yankAfterCursor" value="Ctrl+K" title="Yank Line After Cursor" />
+         <shortcut refid="pasteLastYank" value="Ctrl+Y" title="Insert Yanked Text" />
          <shortcut value="Ctrl+T" title="Transpose Letters" if="org.rstudio.core.client.BrowseCap.isMacintosh()"/>
          <shortcut value="Alt+-" title="Insert Assignment Operator"/>
          <shortcut value="Cmd+Shift+M" title="Insert Pipe Operator" />
-         <shortcut refid="renameInFile" value="Cmd+Alt+Shift+M" />
+         <shortcut refid="renameInScope" value="Cmd+Alt+Shift+M" />
          <shortcut refid="insertRoxygenSkeleton" value="Cmd+Shift+Alt+R" title="Insert Roxygen Skeleton" />
          <shortcut refid="insertSnippet" value="Shift+Tab" title="Insert Snippet"/>
       </shortcutgroup>
@@ -647,13 +667,13 @@ well as menu structures (for main menu and popup menus).
          <shortcut refid="sourceActiveDocumentWithEcho" value="Cmd+Shift+Enter"/>;
          <shortcut refid="sourceFile" value="Ctrl+Alt+G" title="Source a File..."/>
          <shortcut refid="executeLastCode" value="Cmd+Shift+P"/>
-         <shortcut refid="executeCode" value="Cmd+R" if="org.rstudio.core.client.BrowseCap.isWindowsDesktop()" disableModes="vim"/>
+         <shortcut refid="executeCode" value="Cmd+R" if="org.rstudio.core.client.BrowseCap.isWindowsDesktop()" disableModes="vim,emacs"/>
          <shortcut refid="executeCode" value="Ctrl+C Ctrl+N" disableModes="default,vim"/>
          <shortcut refid="executeCode" value="Cmd+Enter"/>
          <shortcut refid="executeCodeWithoutMovingCursor" value="Alt+Enter"/>
          <shortcut refid="executeAllCode" value="Cmd+Alt+R"/>
          <shortcut refid="executeToCurrentLine" value="Cmd+Alt+B"/>
-         <shortcut refid="executeFromCurrentLine" value="Cmd+Alt+E"/>
+         <shortcut refid="executeFromCurrentLine" value="Cmd+Alt+E" disableModes="emacs"/>
          <shortcut refid="executeCurrentFunction" value="Ctrl+C Ctrl+F" disableModes="default,vim"/>
          <shortcut refid="executeCurrentFunction" value="Cmd+Alt+F"/>
          <shortcut refid="executeCurrentSection" value="Cmd+Alt+T"/>
@@ -669,7 +689,9 @@ well as menu structures (for main menu and popup menus).
          <shortcut refid="debugFinish" value="Shift+F6"/>
          <shortcut refid="debugContinue" value="Shift+F5"/>
          <shortcut refid="debugStop" value="Shift+F8"/>
-         <shortcut refid="showProfiler" value="Cmd+Shift+F6"/>
+      </shortcutgroup>
+      <shortcutgroup name="Profile">
+         <shortcut refid="profileCode" value="Cmd+Alt+Shift+P"/>
       </shortcutgroup>
       <shortcutgroup name="Source Control">
          <shortcut refid="vcsFileDiff" value="Ctrl+Alt+D" title="Diff Files"/>
@@ -778,6 +800,10 @@ well as menu structures (for main menu and popup menus).
         buttonLabel=""
         menuLabel="_R Script"
         desc="Create a new R script"/>
+
+   <cmd id="newRNotebook"
+        menuLabel="R _Notebook"
+        desc="Create a new R Markdown notebook" />
 
    <cmd id="newTextDoc"
         menuLabel="_Text File"
@@ -1256,6 +1282,11 @@ well as menu structures (for main menu and popup menus).
    <cmd id="findFromSelection"
         menuLabel="_Use Selection for Find"/>
         
+   <cmd id="quickAddNext"
+        buttonLabel="Add"
+        menuLabel="Find and Add Next"
+        desc="Find and add next occurence"/>
+        
    <cmd id="findAll"
         label="Find All"
         context="editor"/>
@@ -1388,8 +1419,13 @@ well as menu structures (for main menu and popup menus).
         context="editor"/>
         
    <cmd id="executePreviousChunks"
-        menuLabel="Run _Previous Chunks"
-        desc="Run all previous chunks in the source file"
+        menuLabel="Run All Chunks Above"
+        desc="Run all above the current one"
+        context="r"/>
+        
+   <cmd id="executeSubsequentChunks"
+        menuLabel="Run All Chunks Below"
+        desc="Run all chunks after the current one"
         context="r"/>
         
    <cmd id="executeCurrentChunk"
@@ -1496,10 +1532,10 @@ well as menu structures (for main menu and popup menus).
         desc="Reflow selected comment lines so they wrap evenly"
         context="editor"/>
         
-   <cmd id="renameInFile"
-        label="Rename Symbol in File"
-        menuLabel="Rename in File"
-        desc="Rename symbol in current file"
+   <cmd id="renameInScope"
+        label="Rename Symbol in Scope"
+        menuLabel="Rename in Scope"
+        desc="Rename symbol in current scope"
         context="editor"/>
         
    <cmd id="insertSnippet"
@@ -1644,6 +1680,21 @@ well as menu structures (for main menu and popup menus).
         label="Knit with Parameters..."
         menuLabel="Knit _with Parameters..."
         desc="Knit the document with a set of custom parameters"/>
+        
+   <cmd id="notebookExpandAllOutput"
+        buttonLabel=""
+        menuLabel="Expand All Output"
+        desc="Expand all code chunk output in the current file"/>
+        
+   <cmd id="notebookCollapseAllOutput"
+        buttonLabel=""
+        menuLabel="Collapse All Output"
+        desc="Collapse all code chunk output in the current file"/>
+
+   <cmd id="notebookClearAllOutput"
+        buttonLabel=""
+        menuLabel="Clear All Output"
+        desc="Remove all code chunk output in the current file"/>
 
    <cmd id="synctexSearch"
         menuLabel="S_ync PDF View to Editor"
@@ -1829,6 +1880,18 @@ well as menu structures (for main menu and popup menus).
         label="Restart R Session"
         menuLabel="_Restart R"
         desc="Restart R"
+        windowMode="main"/>
+        
+  <cmd id="restartRClearOutput"
+        label="Restart R Session and Clear Chunk Output"
+        menuLabel="Restart R and Clear Output"
+        desc="Restart R session and clear chunk output"
+        windowMode="main"/>
+        
+   <cmd id="restartRRunAllChunks"
+        label="Restart R Session and Run All Chunks"
+        menuLabel="Restart R and Run All Chunks"
+        desc="Restart R session and run all chunks"
         windowMode="main"/>
         
    <cmd id="terminateR"
@@ -2389,6 +2452,12 @@ well as menu structures (for main menu and popup menus).
         desc="Open a new R session"
         windowMode="main"/>
 
+   <cmd id="suspendSession"
+        label="Suspend R Session"
+        menuLabel="_Suspend R Session"
+        rebindable="false"
+        windowMode="main"/>
+        
    <cmd id="quitSession"
         label="Quit the Current R Session"
         menuLabel="_Quit Session..."
@@ -2602,11 +2671,6 @@ well as menu structures (for main menu and popup menus).
         desc="Break when any unhandled error occurs"
         checkable="true"
         rebindable="false"/>
-
-   <cmd id="showProfiler"
-        menuLabel= "_Profiler"
-        desc="Show the R code profiler"
-        rebindable="false"/>
         
    <cmd id="startProfiler"
         menuLabel="Start Profiling"
@@ -2615,8 +2679,42 @@ well as menu structures (for main menu and popup menus).
         
    <cmd id="stopProfiler"
         menuLabel="Stop Profiling"
+        buttonLabel="Stop Profiling"
         desc="Stop profiling R code"
         rebindable="false"/>
+
+   <cmd id="profileCode"
+        label="Profile Current Line or Selection"
+        buttonLabel=""
+        menuLabel="_Profile Selected Line(s)"
+        desc="Profile the current line or selection"
+        context="r"/>
+
+   <cmd id="gotoProfileSource"
+        label="Go To Profile Sources"
+        buttonLabel=""
+        desc="Open sources associated with the selection"/>
+
+   <cmd id="profileCodeWithoutFocus"
+        rebindable="false"/>
+
+   <cmd id="openProfile"
+        label="Open Profile..."
+        menuLabel="_Open Profile..."
+        desc="Opens a profile from a file"/>
+
+   <cmd id="saveProfileAs"
+        label="Save Profile As..."
+        menuLabel="_Save Profile As..."
+        buttonLabel=""
+        desc="Saves current profile into a file"/>
+
+   <cmd id="profileHelp"
+        label="Show Guide on Profiling with RStudio"
+        menuLabel="Profiling _Help"
+        desc="Guide to profiling features"
+        context="help"
+        windowMode="main"/>
 
    <cmd id="reloadShinyApp"
         label="Reload Shiny Application"
@@ -2661,6 +2759,10 @@ well as menu structures (for main menu and popup menus).
         menuLabel="_Manage Accounts..."
         desc="Connect or disconnect accounts"
         visible="false"
+        rebindable="false"/>
+        
+   <cmd id="toggleEditorTokenInfo"
+        menuLabel="Toggle Editor Token Information"
         rebindable="false"/>
 
 </commands>

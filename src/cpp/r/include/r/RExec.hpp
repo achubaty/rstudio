@@ -148,6 +148,25 @@ public:
       addParam(param4);
    }
    
+   template <typename Param1Type, typename Param2Type,
+             typename Param3Type, typename Param4Type,
+             typename Param5Type>
+   RFunction(const std::string& name,
+             const Param1Type& param1,
+             const Param2Type& param2,
+             const Param3Type& param3,
+             const Param4Type& param4,
+             const Param5Type& param5)
+      : functionSEXP_(R_UnboundValue)
+   {
+      commonInit(name);
+      addParam(param1);
+      addParam(param2);
+      addParam(param3);
+      addParam(param4);
+      addParam(param5);
+   }
+   
    explicit RFunction(SEXP functionSEXP);
    
    virtual ~RFunction() ;
@@ -173,7 +192,9 @@ public:
    template <typename T>
    void addParam(const std::string& name, const T& param)
    {
-      SEXP paramSEXP = sexp::create(param, &rProtect_);
+      r::sexp::Protect protect;
+      SEXP paramSEXP = sexp::create(param, &protect);
+      preserver_.add(paramSEXP);
       params_.push_back(Param(name, paramSEXP));
    }
                         
@@ -209,8 +230,8 @@ private:
    void commonInit(const std::string& functionName);
    
 private:
-   // protect included SEXPs
-   sexp::Protect rProtect_ ;
+   // preserve SEXPs
+   r::sexp::SEXPPreserver preserver_;
    
    // function 
    SEXP functionSEXP_;

@@ -14,19 +14,23 @@
  */
 package org.rstudio.studio.client.workbench.views.source;
 
+import org.rstudio.core.client.CommandWithArg;
 import org.rstudio.core.client.Counter;
+import org.rstudio.core.client.HandlerRegistrations;
 import org.rstudio.core.client.StringUtil;
 import org.rstudio.core.client.dom.DomUtils;
 import org.rstudio.core.client.theme.res.ThemeStyles;
 import org.rstudio.studio.client.RStudioGinjector;
-import org.rstudio.studio.client.application.events.EventBus;
+import org.rstudio.studio.client.common.filetypes.TextFileType;
 import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
+import org.rstudio.studio.client.workbench.prefs.model.UIPrefsAccessor;
 import org.rstudio.studio.client.workbench.views.source.editors.text.Scope;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ScopeFunction;
 import org.rstudio.studio.client.workbench.views.source.editors.text.TextEditingTarget;
-import org.rstudio.studio.client.workbench.views.source.editors.text.events.DocumentChangedEvent;
-import org.rstudio.studio.client.workbench.views.source.editors.text.events.EditorThemeChangedEvent;
-import org.rstudio.studio.client.workbench.views.source.editors.text.events.RenderFinishedEvent;
+import org.rstudio.studio.client.workbench.views.source.editors.text.events.CursorChangedEvent;
+import org.rstudio.studio.client.workbench.views.source.editors.text.events.CursorChangedHandler;
+import org.rstudio.studio.client.workbench.views.source.editors.text.events.EditorThemeStyleChangedEvent;
+import org.rstudio.studio.client.workbench.views.source.editors.text.events.ScopeTreeReadyEvent;
 
 import com.google.gwt.core.client.GWT;
 import com.google.gwt.core.client.JsArray;
@@ -39,7 +43,6 @@ import com.google.gwt.event.dom.client.ClickEvent;
 import com.google.gwt.event.dom.client.ClickHandler;
 import com.google.gwt.resources.client.ClientBundle;
 import com.google.gwt.resources.client.CssResource;
-import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.Composite;
 import com.google.gwt.user.client.ui.DockLayoutPanel;
 import com.google.gwt.user.client.ui.FlowPanel;
@@ -51,6 +54,7 @@ import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
 
 public class DocumentOutlineWidget extends Composite
+                  implements EditorThemeStyleChangedEvent.Handler
 {
    public class VerticalSeparator extends Composite
    {
@@ -190,10 +194,8 @@ public class DocumentOutlineWidget extends Composite
    }
    
    @Inject
-   private void initialize(EventBus events,
-                           UIPrefs uiPrefs)
+   private void initialize(UIPrefs uiPrefs)
    {
-      events_ = events;
       uiPrefs_ = uiPrefs;
    }
    
@@ -226,30 +228,9 @@ public class DocumentOutlineWidget extends Composite
       panel_.add(tree_);
       
       container_.add(panel_);
+      handlers_ = new HandlerRegistrations();
       initHandlers();
-      
-      // Since render events can be run in quick succession, we use a timer
-      // to ensure multiple render events are 'bundled' into a single run (debounced)
-      renderTimer_ = new Timer()
-      {
-         @Override
-         public void run()
-         {
-            onRenderFinished();
-         }
-      };
-      
-      // Sync themes with editor on startup. Because this requires the CSS
-      // styles to have been read and rendered, we briefly time this out.
-      new Timer()
-      {
-         @Override
-         public void run()
-         {
-            syncThemesWithEditor();
-         }
-      }.schedule(100);
-      
+          
       initWidget(container_);
    }
    
@@ -258,89 +239,49 @@ public class DocumentOutlineWidget extends Composite
       return separator_;
    }
    
+   @Override
+   public void onEditorThemeStyleChanged(EditorThemeStyleChangedEvent event)
+   {
+      updateStyles(container_, event.getStyle());
+      updateStyles(emptyPlaceholder_, event.getStyle());
+   }
+   
    private void initHandlers()
    {
-      target_.getDocDisplay().addRenderFinishedHandler(new RenderFinishedEvent.Handler()
+      handlers_.add(target_.getDocDisplay().addScopeTreeReadyHandler(new ScopeTreeReadyEvent.Handler()
       {
          @Override
-         public void onRenderFinished(RenderFinishedEvent event)
+         public void onScopeTreeReady(ScopeTreeReadyEvent event)
          {
-            renderTimer_.schedule(10);
-         }
-      });
-      
-      target_.getDocDisplay().addDocumentChangedHandler(
-            new DocumentChangedEvent.Handler()
-            {
-               @Override
-               public void onDocumentChanged(final DocumentChangedEvent event)
-               {
-                  Scheduler.get().scheduleDeferred(new ScheduledCommand()
-                  {
-                     @Override
-                     public void execute()
-                     {
-                        DocumentOutlineWidget.this.onDocumentChanged(event);
-                     }
-                  });
-               }
-            });
-      
-      events_.addHandler(
-            EditorThemeChangedEvent.TYPE,
-            new EditorThemeChangedEvent.Handler()
-            {
-               @Override
-               public void onEditorThemeChanged(EditorThemeChangedEvent event)
-               {
-                  syncThemesWithEditor();
-               }
-            });
-      
-   }
-   
-   private void onRenderFinished()
-   {
-      ensureScopeTreePopulated();
-      resetTreeStyles();
-   }
-   
-   private void onDocumentChanged(final DocumentChangedEvent event)
-   {
-      // Debounce value changed events to avoid over-aggressively rebuilding
-      // the scope tree.
-      if (docUpdateTimer_ != null)
-         docUpdateTimer_.cancel();
-      
-      docUpdateTimer_ = new Timer()
-      {
-         
-         @Override
-         public void run()
-         {
-            updateScopeTree(event);
+            rebuildScopeTree(event.getScopeTree(), event.getCurrentScope());
             resetTreeStyles();
          }
-      };
+      }));
       
-      docUpdateTimer_.schedule(1000);
-   }
-   
-   private void syncThemesWithEditor()
-   {
-      Element editorContainer = target_.asWidget().getElement();
-      Element[] aceContentElements =
-            DomUtils.getElementsByClassName(editorContainer, "ace_scroller");
+      handlers_.add(target_.getDocDisplay().addCursorChangedHandler(new CursorChangedHandler()
+      {
+         @Override
+         public void onCursorChanged(CursorChangedEvent event)
+         {
+            if (target_.getDocDisplay().isScopeTreeReady(event.getPosition().getRow()))
+            {
+               currentScope_ = target_.getDocDisplay().getCurrentScope();
+               resetTreeStyles();
+            }
+         }
+      }));
       
-      int n = aceContentElements.length;
-      assert n == 1
-            : "Expected a single editor instance; found " + n;
+      handlers_.add(target_.addEditorThemeStyleChangedHandler(this));
       
-      Element content = aceContentElements[0];
-      Style computed = DomUtils.getComputedStyles(content);
+      handlers_.add(uiPrefs_.shownSectionsInDocumentOutline().bind(new CommandWithArg<String>()
+      {
+         @Override
+         public void execute(String prefValue)
+         {
+            rebuildScopeTreeOnPrefChange();
+         }
+      }));
       
-      updateStyles(container_, computed);
-      updateStyles(emptyPlaceholder_, computed);
    }
    
    private void updateStyles(Widget widget, Style computed)
@@ -366,20 +307,24 @@ public class DocumentOutlineWidget extends Composite
       }
    }
    
-   private void updateScopeTree(DocumentChangedEvent event)
-   {
-      rebuildScopeTree();
-   }
-   
    private void setActiveWidget(Widget widget)
    {
       panel_.clear();
       panel_.add(widget);
    }
    
-   private void rebuildScopeTree()
+   private void rebuildScopeTreeOnPrefChange()
    {
-      scopeTree_ = target_.getDocDisplay().getScopeTree();
+      if (scopeTree_ == null || currentScope_ == null)
+         return;
+      
+      rebuildScopeTree(scopeTree_, currentScope_);
+   }
+   
+   private void rebuildScopeTree(JsArray<Scope> scopeTree, Scope currentScope)
+   {
+      scopeTree_ = scopeTree;
+      currentScope_ = currentScope;
       
       if (scopeTree_.length() == 0)
       {
@@ -445,11 +390,12 @@ public class DocumentOutlineWidget extends Composite
    
    private boolean shouldDisplayNode(Scope node)
    {
-      if (!uiPrefs_.showUnnamedEntriesInDocumentOutline().getGlobalValue() &&
-          isUnnamedNode(node))
-      {
+      String shownSectionsPref = uiPrefs_.shownSectionsInDocumentOutline().getGlobalValue();
+      if (node.isChunk() && shownSectionsPref.equals(UIPrefsAccessor.DOC_OUTLINE_SHOW_SECTIONS_ONLY))
          return false;
-      }
+      
+      if (isUnnamedNode(node) && !shownSectionsPref.equals(UIPrefsAccessor.DOC_OUTLINE_SHOW_ALL))
+         return false;
       
       // NOTE: the 'is*' items are not mutually exclusive
       if (node.isAnon() || node.isLambda() || node.isTopLevel())
@@ -459,6 +405,18 @@ public class DocumentOutlineWidget extends Composite
       if (node.isNamespace())
          return false;
       
+      // don't show R functions or R sections in non-R files
+      TextFileType fileType = target_.getDocDisplay().getFileType();
+      if (!fileType.isR())
+      {
+         if (node.isFunction())
+            return false;
+         
+         if (node.isSection() && !node.isMarkdownHeader())
+            return false;
+      }
+      
+      // Filter out anonymous functions.
       // TODO: Annotate scope tree in such a way that this isn't necessary
       if (node.getLabel() != null && node.getLabel().startsWith("<function>"))
          return false;
@@ -474,12 +432,6 @@ public class DocumentOutlineWidget extends Composite
    {
       for (int i = 0; i < tree_.getItemCount(); i++)
          setTreeItemStyles((DocumentOutlineTreeItem) tree_.getItem(i));
-   }
-   
-   private void ensureScopeTreePopulated()
-   {
-      if (scopeTree_ == null)
-         rebuildScopeTree();
    }
    
    private DocumentOutlineTreeItem createEntry(Scope node, int depth)
@@ -501,7 +453,7 @@ public class DocumentOutlineWidget extends Composite
    
    private boolean isActiveNode(Scope node)
    {
-      return node.equals(target_.getDocDisplay().getCurrentScope());
+      return node.equals(currentScope_);
    }
    
    private final DockLayoutPanel container_;
@@ -509,13 +461,13 @@ public class DocumentOutlineWidget extends Composite
    private final VerticalSeparator separator_;
    private final Tree tree_;
    private final FlowPanel emptyPlaceholder_;
+   
    private final TextEditingTarget target_;
+   private final HandlerRegistrations handlers_;
    
-   private final Timer renderTimer_;
-   private Timer docUpdateTimer_;
    private JsArray<Scope> scopeTree_;
+   private Scope currentScope_;
    
-   private EventBus events_;
    private UIPrefs uiPrefs_;
    
    // Styles, Resources etc. ----

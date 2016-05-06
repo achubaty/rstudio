@@ -62,6 +62,22 @@
     colLabels <- character()
   }
 
+  # the first column is always the row names
+  rowNameCol <- list(
+      col_name        = .rs.scalar(""),
+      col_type        = .rs.scalar("rownames"),
+      col_min         = .rs.scalar(0),
+      col_max         = .rs.scalar(0),
+      col_search_type = .rs.scalar("none"),
+      col_label       = .rs.scalar(""),
+      col_vals        = "",
+      col_type_r      = .rs.scalar(""))
+
+  # if there are no columns, bail out
+  if (length(colNames) == 0) {
+    return(rowNameCol)
+  }
+
   # truncate to maximum displayed number of columns
   colNames <- colNames[1:min(length(colNames), maxCols)]
 
@@ -119,7 +135,19 @@
         {
           col_min <- round(min(minmax_vals), 5)
           col_max <- round(max(minmax_vals), 5)
-          if (col_min < col_max) 
+
+          # if the base value is 16 digits or larger, it's going to get 
+          # serialized in such a way that we can't parse it (either with a
+          # trailing "." or with a e+xx exponent), so disable filtering
+          col_min_c <- as.character(trunc(col_min))
+          col_max_c <- as.character(trunc(col_max))
+          if (nchar(col_min_c) >= 16 || grepl("e", col_min_c, fixed = TRUE) ||
+              nchar(col_max_c) >= 16 || grepl("e", col_max_c, fixed = TRUE))
+          {
+            col_min <- 0
+            col_max <- 0
+          }
+          else if (col_min < col_max) 
           {
             col_type <- "numeric"
             col_search_type <- "numeric"
@@ -148,16 +176,7 @@
       col_type_r      = .rs.scalar(col_type_r)
     )
   })
-  c(list(list(
-      col_name        = .rs.scalar(""),
-      col_type        = .rs.scalar("rownames"),
-      col_min         = .rs.scalar(0),
-      col_max         = .rs.scalar(0),
-      col_search_type = .rs.scalar("none"),
-      col_label       = .rs.scalar(""),
-      col_vals        = "",
-      col_type_r      = .rs.scalar("")
-    )), colAttrs)
+  c(list(rowNameCol), colAttrs)
 })
 
 .rs.addFunction("formatRowNames", function(x, start, len) 
@@ -450,8 +469,11 @@
   # cached environment
   cacheFile <- file.path(cacheDir, paste(cacheKey, "Rdata", sep = "."))
   if (file.exists(cacheFile))
-  { 
-    load(cacheFile, envir = .rs.CachedDataEnv)
+  {
+    status <- try(load(cacheFile, envir = .rs.CachedDataEnv), silent = TRUE)
+    if (inherits(status, "try-error"))
+       return(NULL)
+     
     if (exists(cacheKey, where = .rs.CachedDataEnv, inherits = FALSE))
       return(get(cacheKey, envir = .rs.CachedDataEnv, inherits = FALSE))
   }
@@ -591,7 +613,7 @@
 
 .rs.addFunction("addCachedData", function(obj, objName) 
 {
-   cacheKey <- paste(sample(c(letters, 0:9), 10, replace = TRUE), collapse = "")
+   cacheKey <- .Call("rs_generateShortUuid")
    .rs.assignCachedData(cacheKey, obj, objName)
    cacheKey
 })

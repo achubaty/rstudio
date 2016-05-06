@@ -23,6 +23,7 @@
 
 #include <r/RExec.hpp>
 #include <r/session/RSessionUtils.hpp>
+#include <r/session/RGraphics.hpp>
 
 #undef TRUE
 #undef FALSE
@@ -194,8 +195,7 @@ void shadowDevSync(DeviceContext* pDC)
    // the invalid name warning in checkValidSymbolId in dotcode.c
    {
       r::session::utils::SuppressOutputInScope scope;
-      error = r::exec::executeSafely(boost::bind(GEcopyDisplayList,
-                                                    rsDeviceNumber));
+      error = r::exec::RFunction(".rs.GEcopyDisplayList", rsDeviceNumber).call();
       if (error && !r::isCodeExecutionError(error))
          LOG_ERROR(error);
    }
@@ -239,6 +239,7 @@ void setSize(pDevDesc pDev)
 {
    dev_desc::setSize(pDev);
    dev_desc::setSize(shadowDevDesc(pDev));
+   setDeviceAttributes(pDev);
 }
 
 void setDeviceAttributes(pDevDesc pDev)
@@ -246,6 +247,15 @@ void setDeviceAttributes(pDevDesc pDev)
    pDevDesc shadowDev = shadowDevDesc(pDev);
    if (shadowDev == NULL)
       return;
+   
+   pDev->left = shadowDev->left;
+   pDev->top = shadowDev->top;
+   pDev->right = shadowDev->right;
+   pDev->bottom = shadowDev->bottom;
+   pDev->clipLeft = shadowDev->clipLeft;
+   pDev->clipTop = shadowDev->clipTop;
+   pDev->clipRight = shadowDev->clipRight;
+   pDev->clipBottom = shadowDev->clipBottom;
    
    pDev->cra[0] = shadowDev->cra[0];
    pDev->cra[1] = shadowDev->cra[1];

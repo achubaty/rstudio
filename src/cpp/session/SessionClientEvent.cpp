@@ -137,14 +137,20 @@ const int kShinyGadgetDialog = 112;
 const int kRmdParamsReady = 113;
 const int kRegisterUserCommand = 114;
 const int kRmdRSConnectDeploymentFailed = 115;
-const int kReplaceRanges = 117;
-const int kGetActiveDocumentContext = 118;
 const int kSendToConsole = 119;
 const int kUserFollowStarted = 120;
 const int kUserFollowEnded = 121;
 const int kProjectAccessRevoked = 122;
 const int kCollabEditSaved = 123;
 const int kAddinRegistryUpdated = 124;
+const int kChunkOutput = 125;
+const int kChunkOutputFinished = 126;
+const int kRprofStarted = 127;
+const int kRprofStopped = 128;
+const int kRprofCreated = 129;
+const int kEditorCommand = 131;
+const int kPreviewRmd = 132;
+const int kWebsiteFileSaved = 133;
 }
 
 void ClientEvent::init(int type, const json::Value& data)
@@ -378,10 +384,6 @@ std::string ClientEvent::typeName() const
          return "rmd_params_ready";
       case client_events::kRegisterUserCommand:
          return "register_user_command";
-      case client_events::kReplaceRanges:
-         return "replace_ranges";
-      case client_events::kGetActiveDocumentContext:
-         return "get_active_document_context";
       case client_events::kSendToConsole:
          return "send_to_console";
       case client_events::kUserFollowStarted:
@@ -394,6 +396,22 @@ std::string ClientEvent::typeName() const
          return "collab_edit_saved";
       case client_events::kAddinRegistryUpdated:
          return "addin_registry_updated";
+      case client_events::kChunkOutput:
+         return "chunk_output";
+      case client_events::kChunkOutputFinished:
+         return "chunk_output_finished";
+      case client_events::kRprofStarted:
+         return "rprof_started";
+      case client_events::kRprofStopped:
+         return "rprof_stopped";
+      case client_events::kRprofCreated:
+         return "rprof_created";
+      case client_events::kEditorCommand:
+         return "editor_command";
+      case client_events::kPreviewRmd:
+         return "preview_rmd";
+      case client_events::kWebsiteFileSaved:
+         return "website_file_saved";
       default:
          LOG_WARNING_MESSAGE("unexpected event type: " + 
                              safe_convert::numberToString(type_));

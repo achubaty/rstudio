@@ -128,15 +128,21 @@ class ClientEvent extends JavaScriptObject
    public static final String ShinyGadgetDialog = "shiny_gadget_dialog";
    public static final String RmdParamsReady = "rmd_params_ready";
    public static final String RegisterUserCommand = "register_user_command";
-   public static final String ReplaceRanges = "replace_ranges";
-   public static final String GetActiveDocumentContext = "get_active_document_context";
    public static final String SendToConsole = "send_to_console";
    public static final String UserFollowStarted = "user_follow_started";
    public static final String UserFollowEnded = "user_follow_ended";
    public static final String ProjectAccessRevoked = "project_access_revoked";
    public static final String CollabEditSaved = "collab_edit_saved";
    public static final String AddinRegistryUpdated = "addin_registry_updated";
-   
+   public static final String ChunkOutput = "chunk_output";
+   public static final String ChunkOutputFinished = "chunk_output_finished";
+   public static final String RprofStarted = "rprof_started";
+   public static final String RprofStopped = "rprof_stopped";
+   public static final String RprofCreated = "rprof_created";
+   public static final String EditorCommand = "editor_command";
+   public static final String PreviewRmd = "preview_rmd";
+   public static final String WebsiteFileSaved = "website_file_saved";
+
    protected ClientEvent()
    {
    }

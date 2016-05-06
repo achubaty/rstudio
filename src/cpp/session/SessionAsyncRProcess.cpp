@@ -63,12 +63,9 @@ void AsyncRProcess::start(const char* rCommand,
             session::options().coreRSourcePath();
       
       const core::FilePath rTools =  rPath.childPath("Tools.R");
-      const core::FilePath sessionCodeTools = modulesPath.childPath("SessionCodeTools.R");
-      const core::FilePath sessionRCompletions = modulesPath.childPath("SessionRCompletions.R");
       
-      rSourceFiles.push_back(rTools);
-      rSourceFiles.push_back(sessionCodeTools);
-      rSourceFiles.push_back(sessionRCompletions);
+      // insert at begin as Tools.R needs to be sourced first
+      rSourceFiles.insert(rSourceFiles.begin(), rTools);
    }
 
    // args
@@ -106,6 +103,11 @@ void AsyncRProcess::start(const char* rCommand,
    if (needsQuote)
       command << "\"";
 
+   std::string escapedCommand = rCommand;
+
+   if (needsQuote)
+      boost::algorithm::replace_all(escapedCommand, "\"", "\\\"");
+    
    if (rSourceFiles.size())
    {
       // add in the r source files requested
@@ -116,11 +118,11 @@ void AsyncRProcess::start(const char* rCommand,
          command << "source('" << it->absolutePath() << "');";
       }
       
-      command << rCommand;
+      command << escapedCommand;
    }
    else
    {
-      command << rCommand;
+      command << escapedCommand;
    }
 
    if (needsQuote)
@@ -198,6 +200,11 @@ void AsyncRProcess::onStderr(const std::string& output)
 bool AsyncRProcess::onContinue()
 {
    return !terminationRequested_;
+}
+
+bool AsyncRProcess::terminationRequested()
+{
+   return terminationRequested_;
 }
 
 void AsyncRProcess::onProcessCompleted(int exitStatus)

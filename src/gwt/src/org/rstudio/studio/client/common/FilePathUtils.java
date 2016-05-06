@@ -88,6 +88,13 @@ public class FilePathUtils
       return path.substring(lastSlashIndex + 1, extensionIndex);
    }
    
+   public static String filePathSansExtension(String path)
+   {
+      int lastSlashIndex = path.lastIndexOf('/');
+      int extensionIndex = getExtensionIndex(path, lastSlashIndex + 1);
+      return path.substring(0, extensionIndex);
+   }
+   
    @SuppressWarnings("unused")
    private static int getExtensionIndex(String path)
    {
@@ -99,6 +106,8 @@ public class FilePathUtils
    {
       if (path.endsWith(".tar.gz"))
          return path.length() - 7;
+      else if (path.endsWith(".nb.html"))
+         return path.length() - 8;
       
       int lastDotIndex = path.lastIndexOf('.');
       if (lastDotIndex == -1 || lastDotIndex < fromIndex)

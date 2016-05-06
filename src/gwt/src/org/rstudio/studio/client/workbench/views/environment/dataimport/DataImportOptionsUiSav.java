@@ -27,7 +27,6 @@ import com.google.gwt.uibinder.client.UiBinder;
 import com.google.gwt.uibinder.client.UiFactory;
 import com.google.gwt.uibinder.client.UiField;
 import com.google.gwt.user.client.ui.ListBox;
-import com.google.gwt.user.client.ui.TextBox;
 import com.google.gwt.user.client.ui.Widget;
 
 public class DataImportOptionsUiSav extends DataImportOptionsUi
@@ -69,6 +68,8 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
          formatListBox_.setSelectedIndex(0);
          break;
       }
+      
+      updateEnabled();
    }
    
    @Override
@@ -76,7 +77,7 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
    {
       return DataImportOptionsSav.create(
          nameTextBox_.getValue(),
-         fileChooser_.getText(),
+         !fileChooser_.getText().isEmpty() ? fileChooser_.getText() : null,
          formatListBox_.getSelectedValue()
       );
    }
@@ -85,17 +86,21 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
    public void setAssembleResponse(DataImportAssembleResponse response)
    {
       nameTextBox_.setText(response.getDataName());
+      updateEnabled();
    }
    
    @Override
    public void clearOptions()
    {
       nameTextBox_.setText("");
+      updateEnabled();
    }
    
    @Override
    public void setImportLocation(String importLocation)
    {
+      nameTextBox_.setText("");
+      
       String[] components = importLocation.split("\\.");
       if (components.length > 0)
       {
@@ -119,6 +124,7 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
             @Override
             public void execute()
             {
+               updateEnabled();
                triggerChange();
             }
          },
@@ -134,6 +140,7 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
          @Override
          public void onValueChange(ValueChangeEvent<String> arg0)
          {
+            updateEnabled();
             triggerChange();
          }
       };
@@ -143,6 +150,7 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
          @Override
          public void onChange(ChangeEvent arg0)
          {
+            updateEnabled();
             triggerChange();
          }
       };
@@ -151,8 +159,17 @@ public class DataImportOptionsUiSav extends DataImportOptionsUi
       formatListBox_.addChangeHandler(changeHandler);
    }
    
-   @UiField
-   TextBox nameTextBox_;
+   void updateEnabled()
+   {
+      if (formatListBox_.getSelectedValue() == "sas")
+      {
+         fileChooser_.setEnabled(true);    
+      }
+      else
+      {
+         fileChooser_.setEnabled(false);
+      }
+   }
    
    @UiField
    ListBox formatListBox_;

@@ -46,6 +46,7 @@ import org.rstudio.studio.client.common.filetypes.TextFileType;
 import org.rstudio.studio.client.notebookv2.CompileNotebookv2Options;
 import org.rstudio.studio.client.notebookv2.CompileNotebookv2OptionsDialog;
 import org.rstudio.studio.client.notebookv2.CompileNotebookv2Prefs;
+import org.rstudio.studio.client.rmarkdown.RmdOutput;
 import org.rstudio.studio.client.rmarkdown.events.RenderRmdEvent;
 import org.rstudio.studio.client.rmarkdown.events.RenderRmdSourceEvent;
 import org.rstudio.studio.client.rmarkdown.events.RmdParamsReadyEvent;
@@ -72,6 +73,7 @@ import org.rstudio.studio.client.workbench.WorkbenchContext;
 import org.rstudio.studio.client.workbench.model.Session;
 import org.rstudio.studio.client.workbench.prefs.model.UIPrefs;
 import org.rstudio.studio.client.workbench.views.files.model.FilesServerOperations;
+import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
 import org.rstudio.studio.client.workbench.views.source.events.FileEditEvent;
 import org.rstudio.studio.client.workbench.views.source.model.DocUpdateSentinel;
 
@@ -142,10 +144,18 @@ public class TextEditingTargetRMarkdownHelper
           final boolean isShinyDoc,
           final CommandWithArg<RMarkdownContext> onReady)
    {
+      withRMarkdownPackage("R Markdown", userAction, isShinyDoc, onReady);
+   }
+
+   public void withRMarkdownPackage(
+          String progressCaption,
+          final String userAction, 
+          final boolean isShinyDoc,
+          final CommandWithArg<RMarkdownContext> onReady)
+   {
       dependencyManager_.withRMarkdown(
-         
+         progressCaption,
          userAction,  
-         
          new Command() {
             
             @Override
@@ -263,7 +273,8 @@ public class TextEditingTargetRMarkdownHelper
                                              sourceDoc.getEncoding(),
                                              null,
                                              false,
-                                             false));
+                                             RmdOutput.TYPE_STATIC,
+                                             null));
    }
    
    public void renderRMarkdown(final String sourceFile, 
@@ -272,11 +283,14 @@ public class TextEditingTargetRMarkdownHelper
                                final String encoding, 
                                final String paramsFile,
                                final boolean asTempfile,
-                               final boolean isShinyDoc,
+                               final int type,
                                final boolean asShiny)
    {
-      withRMarkdownPackage("Rendering R Markdown documents", 
-                           isShinyDoc,
+      withRMarkdownPackage(type == RmdOutput.TYPE_NOTEBOOK ?
+                              "R Notebook" :
+                              "R Markdown", 
+                           "Rendering R Markdown documents", 
+                           type == RmdOutput.TYPE_SHINY,
                            new CommandWithArg<RMarkdownContext>() {
          @Override
          public void execute(RMarkdownContext arg)
@@ -287,7 +301,8 @@ public class TextEditingTargetRMarkdownHelper
                                                    encoding, 
                                                    paramsFile,
                                                    asTempfile,
-                                                   asShiny));
+                                                   type,
+                                                   null));
          }
       });
    }
@@ -485,6 +500,44 @@ public class TextEditingTargetRMarkdownHelper
          Debug.log("Warning: Exception thrown while parsing YAML:\n" + yaml);
       }
       return null;
+   }
+   
+   public boolean isRuntimeShiny(String yaml)
+   {
+      // This is in the editor load path, so guard against exceptions and log
+      // any we find without bringing down the editor. 
+      try
+      {  
+         YamlTree tree = new YamlTree(yaml);
+         
+         if (tree.getKeyValue(RmdFrontMatter.KNIT_KEY).length() > 0)
+            return false;
+         
+         return tree.getKeyValue(
+             RmdFrontMatter.RUNTIME_KEY).equals(RmdFrontMatter.SHINY_RUNTIME);
+      }
+      catch (Exception e)
+      {
+         Debug.log("Warning: Exception thrown while parsing YAML:\n" + yaml);
+      }
+      return false;
+   }
+   
+   public String getCustomKnit(String yaml)
+   {
+      // This is in the editor load path, so guard against exceptions and log
+      // any we find without bringing down the editor. 
+      try
+      {  
+         YamlTree tree = new YamlTree(yaml);
+         String knit = tree.getKeyValue(RmdFrontMatter.KNIT_KEY);
+         return knit;
+      }
+      catch (Exception e)
+      {
+         Debug.log("Warning: Exception thrown while parsing YAML:\n" + yaml);
+      }
+      return new String();
    }
    
    // Parses YAML, adds the given format option with any transferable
@@ -771,7 +824,31 @@ public class TextEditingTargetRMarkdownHelper
       });
    }
    
-   
+   /**
+    * For a chunk like:
+    * 
+    * ```{r cars, echo=FALSE}
+    * ```
+    * 
+    * returns the text "r cars, echo=FALSE".
+    * 
+    * @param chunk Scope representing the chunk
+    * @return Range representing the contents of the chunk's {} options block
+    */
+   public static String getRmdChunkOptionText(Scope chunk, DocDisplay display)
+   {
+      if (chunk == null)
+         return null;
+
+      assert chunk.isChunk();
+
+      Position start = Position.create(chunk.getPreamble().getRow(), 
+            chunk.getPreamble().getColumn() + 4); // 4 = length of "```{"
+      Position end = Position.create(chunk.getPreamble().getRow(), 
+            display.getLine(start.getRow()).length() - 1);
+      return display.getCode(start, end);
+   }
+
    // Private methods ---------------------------------------------------------
    
    
@@ -896,6 +973,20 @@ public class TextEditingTargetRMarkdownHelper
       return result;
    }
       
+   public List<String> getOutputFormats(String yaml)
+   {
+      try
+      {  
+         YamlTree tree = new YamlTree(yaml);
+         return getOutputFormats(tree);   
+      }
+      catch (Exception e)
+      {
+         Debug.log("Warning: Exception thrown while parsing YAML:\n" + yaml);
+      }
+      return null;
+   }
+   
    private List<String> getOutputFormats(YamlTree tree)
    {
       List<String> outputs = tree.getChildKeys(RmdFrontMatter.OUTPUT_KEY);

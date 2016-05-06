@@ -89,7 +89,7 @@ public class DependencyManager implements InstallShinyEvent.Handler
          "Packrat",
          userAction,
          new Dependency[] {
-            Dependency.cranPackage("packrat", "0.4.6", true)
+            Dependency.cranPackage("packrat", "0.4.7", true)
          },
          false,
          new CommandWithArg<Boolean>()
@@ -114,12 +114,12 @@ public class DependencyManager implements InstallShinyEvent.Handler
       deps.add(Dependency.cranPackage("RCurl", "1.95"));
       deps.add(Dependency.cranPackage("RJSONIO", "1.0"));
       deps.add(Dependency.cranPackage("PKI", "0.1"));
-      deps.add(Dependency.cranPackage("rstudioapi", "0.2"));
+      deps.add(Dependency.cranPackage("rstudioapi", "0.5"));
       deps.add(Dependency.cranPackage("yaml", "2.1.5"));
       if (requiresRmarkdown)
          deps.addAll(rmarkdownDependencies());
-      deps.add(Dependency.cranPackage("packrat", "0.4.6", true));
-      deps.add(Dependency.embeddedPackage("rsconnect"));
+      deps.add(Dependency.cranPackage("packrat", "0.4.7", true));
+      deps.add(Dependency.cranPackage("rsconnect", "0.4.3", true));
       
       withDependencies(
         "Publishing",
@@ -133,11 +133,17 @@ public class DependencyManager implements InstallShinyEvent.Handler
    
    public void withRMarkdown(String userAction, final Command command)
    {
+      withRMarkdown("R Markdown", userAction, command);
+   }
+
+   public void withRMarkdown(String progressCaption, String userAction, 
+         final Command command)
+   {
      withDependencies(   
-        "R Markdown",
+        progressCaption,
         userAction, 
         rmarkdownDependenciesArray(), 
-        false,
+        true, // we want to update to the embedded versoin if needed
         new CommandWithArg<Boolean>()
         {
          @Override
@@ -163,8 +169,10 @@ public class DependencyManager implements InstallShinyEvent.Handler
       deps.add(Dependency.cranPackage("htmltools", "0.2.4"));
       deps.add(Dependency.cranPackage("caTools", "1.14"));
       deps.add(Dependency.cranPackage("bitops", "1.0-6"));
-      deps.add(Dependency.cranPackage("knitr", "1.11", true));
-      deps.add(Dependency.cranPackage("rmarkdown", "0.9.2", true));
+      deps.add(Dependency.cranPackage("knitr", "1.12", true));
+      deps.add(Dependency.cranPackage("jsonlite", "0.9.19"));
+      deps.add(Dependency.cranPackage("base64enc", "0.1-3"));
+      deps.add(Dependency.embeddedPackage("rmarkdown"));
       return deps;
    }
    
@@ -226,7 +234,7 @@ public class DependencyManager implements InstallShinyEvent.Handler
                                     "0.13", // shiny version
                                     "0.3"); // htmltools version
       deps.add(Dependency.cranPackage("miniUI", "0.1.1", true));
-      deps.add(Dependency.cranPackage("rstudioapi", "0.4", true));
+      deps.add(Dependency.cranPackage("rstudioapi", "0.5", true));
       
       withDependencies(   
         "Checking installed packages",
@@ -259,7 +267,7 @@ public class DependencyManager implements InstallShinyEvent.Handler
       ArrayList<Dependency> deps = new ArrayList<Dependency>();
       deps.add(Dependency.cranPackage("httpuv", "1.3.3"));
       deps.add(Dependency.cranPackage("mime", "0.3"));
-      deps.add(Dependency.cranPackage("jsonlite", "0.9.16"));
+      deps.add(Dependency.cranPackage("jsonlite", "0.9.19"));
       deps.add(Dependency.cranPackage("xtable", "1.7"));
       deps.add(Dependency.cranPackage("digest", "0.6"));
       deps.add(Dependency.cranPackage("R6", "2.0"));
@@ -526,7 +534,7 @@ public class DependencyManager implements InstallShinyEvent.Handler
    {
       ArrayList<Dependency> deps = new ArrayList<Dependency>();
       deps.add(Dependency.cranPackage("mongolite", "0.8"));
-      deps.add(Dependency.cranPackage("jsonlite", "0.9.16"));
+      deps.add(Dependency.cranPackage("jsonlite", "0.9.19"));
       return deps;
    }
    
@@ -534,6 +542,33 @@ public class DependencyManager implements InstallShinyEvent.Handler
    {
       ArrayList<Dependency> deps = dataImportMongoDependencies();
       return deps.toArray(new Dependency[deps.size()]);
+   }
+
+   public void withProfvis(String userAction, final Command command)
+   {
+     withDependencies(
+        "Preparing Profiler",
+        userAction, 
+        new Dependency[] {
+           Dependency.cranPackage("stringr", "0.6"),
+           Dependency.cranPackage("jsonlite", "0.9.19"),
+           Dependency.cranPackage("htmltools", "0.3"),
+           Dependency.cranPackage("yaml", "2.1.5"),
+           Dependency.cranPackage("htmlwidgets", "0.6", true),
+           Dependency.embeddedPackage("profvis")
+          
+        }, 
+        true, // update profvis if needed
+        new CommandWithArg<Boolean>()
+        {
+           @Override
+           public void execute(Boolean succeeded)
+           {
+              if (succeeded)
+                 command.execute();
+           }
+        }
+     );
    }
    
    private void withDependencies(String progressCaption,

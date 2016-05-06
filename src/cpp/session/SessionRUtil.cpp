@@ -23,66 +23,24 @@
 #include <core/FileSerializer.hpp>
 
 #include <r/RExec.hpp>
+#include <r/RRoutines.hpp>
 
 #include <session/SessionModuleContext.hpp>
 
 #include <boost/regex.hpp>
+
+#include <core/YamlUtil.hpp>
 
 #include "modules/shiny/SessionShiny.hpp"
 
 namespace rstudio {
 
 using namespace core;
+using namespace core::yaml;
 
 namespace session {
 namespace r_utils {
 
-namespace {
-
-boost::regex& reYaml()
-{
-   static boost::regex instance("^[\\s\\n]*---\\s*(.*?)---\\s*(?:$|\\n)");
-   return instance;
-}
-
-} // anonymous namespace
-
-bool hasYamlHeader(const FilePath& filePath)
-{
-   std::string contents;
-   Error error = readStringFromFile(filePath, &contents);
-   if (error)
-      LOG_ERROR(error);
-   
-   return hasYamlHeader(contents);
-}
-
-bool hasYamlHeader(const std::string& content)
-{
-   return boost::regex_search(content.begin(), content.end(), reYaml());
-}
-
-std::string extractYamlHeader(const FilePath& filePath)
-{
-   std::string contents;
-   Error error = readStringFromFile(filePath, &contents);
-   if (error)
-      LOG_ERROR(error);
-   
-   return extractYamlHeader(contents);
-}
-
-std::string extractYamlHeader(const std::string& content)
-{
-   std::string result;
-   boost::smatch match;
-   
-   if (boost::regex_search(content.begin(), content.end(), match, reYaml()))
-      if (match.size() >= 1)
-         result = match[1];
-   
-   return result;
-}
 
 namespace {
 
@@ -152,8 +110,26 @@ std::set<std::string> implicitlyAvailablePackages(const FilePath& filePath)
    return implicitlyAvailablePackages(filePath, contents);
 }
 
+namespace {
+
+SEXP rs_fromJSON(SEXP objectSEXP)
+{
+   std::string contents = r::sexp::asString(objectSEXP);
+   
+   json::Value jsonValue;
+   if (!json::parse(contents, &jsonValue))
+      return R_NilValue;
+   
+   r::sexp::Protect protect;
+   return r::sexp::create(jsonValue, &protect);
+}
+
+} // anonymous namespace
+
 Error initialize()
 {
+   RS_REGISTER_CALL_METHOD(rs_fromJSON, 1);
+   
    return Success();
 }
 

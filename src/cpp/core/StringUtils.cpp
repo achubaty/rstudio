@@ -105,16 +105,21 @@ bool isSubsequence(std::string const& self,
 std::vector<int> subsequenceIndices(std::string const& sequence,
                                     std::string const& query)
 {
-   int query_n = query.length();
+   std::string::size_type querySize = query.length();
    std::vector<int> result;
-   result.reserve(query.length());
+   result.reserve(querySize);
 
-   int prevMatchIndex = -1;
-   for (int i = 0; i < query_n; i++)
+   std::string::size_type prevMatchIndex = -1;
+   for (std::string::size_type i = 0; i < querySize; i++)
    {
-      result[i] = sequence.find(query[i], prevMatchIndex + 1);
-      prevMatchIndex = result[i];
+      std::string::size_type index = sequence.find(query[i], prevMatchIndex + 1);
+      if (index == std::string::npos)
+         continue;
+      
+      result.push_back(index);
+      prevMatchIndex = index;
    }
+   
    return result;
 }
 
@@ -646,6 +651,15 @@ std::wstring::const_iterator countNewlines(std::wstring::const_iterator begin,
 bool isPrefixOf(const std::string& self, const std::string& prefix)
 {
    return boost::algorithm::starts_with(self, prefix);
+}
+
+std::string makeRandomByteString(std::size_t n)
+{
+   std::string result;
+   result.resize(n);
+   for (std::size_t i = 0; i < n; ++i)
+      result[i] = (unsigned char) (::rand() % UCHAR_MAX);
+   return result;
 }
 
 } // namespace string_utils

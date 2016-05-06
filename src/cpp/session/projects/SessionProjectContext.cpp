@@ -1,7 +1,7 @@
 /*
  * SessionProjectContext.cpp
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-16 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -25,6 +25,10 @@
 #include <core/r_util/RSessionContext.hpp>
 
 #include <core/system/FileMonitor.hpp>
+
+#ifndef _WIN32
+#include <core/system/FileMode.hpp>
+#endif
 
 #include <r/RExec.hpp>
 #include <r/RRoutines.hpp>
@@ -518,6 +522,8 @@ void ProjectContext::updateBuildTargetPath()
          buildTarget = config().packagePath;
       else if (config().buildType == r_util::kBuildTypeMakefile)
          buildTarget = config().makefilePath;
+      else if (config().buildType == r_util::kBuildTypeWebsite)
+         buildTarget = config().websitePath;
       else if (config().buildType == r_util::kBuildTypeCustom)
          buildTarget = config().customScriptPath;
 
@@ -656,6 +662,9 @@ Error ProjectContext::readBuildOptions(RProjectBuildOptions* pOptions)
       return error;
 
    pOptions->makefileArgs = optionsFile.get("makefile_args");
+   pOptions->previewWebsite = optionsFile.getBool("preview_website", true);
+   pOptions->livePreviewWebsite = optionsFile.getBool("live_preview_website", true);
+   pOptions->websiteOutputFormat = optionsFile.get("website_output_format", "all");
    pOptions->autoRoxygenizeForCheck = optionsFile.getBool(
                                        "auto_roxygenize_for_check",
                                        true);
@@ -681,6 +690,9 @@ Error ProjectContext::writeBuildOptions(const RProjectBuildOptions& options)
 
    optionsFile.beginUpdate();
    optionsFile.set("makefile_args", options.makefileArgs);
+   optionsFile.set("preview_website", options.previewWebsite);
+   optionsFile.set("live_preview_website", options.livePreviewWebsite);
+   optionsFile.set("website_output_format", options.websiteOutputFormat);
    optionsFile.set("auto_roxygenize_for_check",
                    options.autoRoxygenizeForCheck);
    optionsFile.set("auto_roxygenize_for_build_package",
@@ -693,6 +705,23 @@ Error ProjectContext::writeBuildOptions(const RProjectBuildOptions& options)
    buildOptions_ = options;
 
    return Success();
+}
+
+void ProjectContext::setWebsiteOutputFormat(
+                           const std::string& websiteOutputFormat)
+{
+   core::Settings optionsFile;
+   Error error = buildOptionsFile(&optionsFile);
+   if (error)
+   {
+      LOG_ERROR(error);
+      return;
+   }
+
+   optionsFile.set("website_output_format", websiteOutputFormat);
+
+   buildOptions_.websiteOutputFormat = websiteOutputFormat;
+
 }
 
 bool ProjectContext::isPackageProject()
@@ -710,27 +739,24 @@ bool ProjectContext::supportsSharing()
    return !options().getOverlayOption(kSessionSharedStoragePath).empty();
 }
 
-// attempts to determine whether we're the owner of the project; currently
-// this is inferred from ownership on the project directory
-bool ProjectContext::ownedByUser()
+// attempts to determine whether we can browse above the project folder
+bool ProjectContext::parentBrowseable()
 {
 #ifdef _WIN32
    // we don't need to know this on Windows, and we'd need to compute it very
    // differently
    return true;
 #else
-   struct stat st; 
-   if (::stat(directory().absolutePath().c_str(), &st) == -1) 
+   bool browse = true;
+   Error error = core::system::isFileReadable(directory().parent(), &browse);
+   if (error)
    {
-      Error error = systemError(errno, ERROR_LOCATION);
-      error.addProperty("path", directory().absolutePath());
-      LOG_ERROR(error);
-
-      // if we can't figure it out, presume we're the owner (this preserves
+      // if we can't figure it out, presume it to be browseable (this preserves
       // existing behavior) 
+      LOG_ERROR(error);
       return true;
    }
-   return st.st_uid == ::geteuid();
+   return browse;
 #endif
 }
 

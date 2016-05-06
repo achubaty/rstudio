@@ -21,7 +21,7 @@
 # custom browseURL implementation
 options(browser = function(url)
 {
-   .Call(.rs.routines$rs_browseURL, url) ;
+   .Call("rs_browseURL", url) ;
 })
 
 # default viewer option if not already set
@@ -109,14 +109,8 @@ if (is.na(Sys.getenv("DISPLAY", NA)))
 # to manually make sure that the DISPLAY environment variable exists and that
 # the .Platform$GUI is not "unknown"
 
+# configure profvis to use custom path to store profiles
+options(profvis.output_path = NULL)
 
-
-
-
-
-
-
-
-
-
-
+# configure profvis to not delete generated profiles
+options(profvis.keep_output = TRUE)

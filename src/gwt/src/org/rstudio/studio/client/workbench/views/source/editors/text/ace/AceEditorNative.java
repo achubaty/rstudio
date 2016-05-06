@@ -37,6 +37,17 @@ public class AceEditorNative extends JavaScriptObject {
    public native final Renderer getRenderer() /*-{
       return this.renderer;
    }-*/;
+   
+   public native final LineWidgetManager getLineWidgetManager() /*-{
+      var session = this.getSession();
+      if (!session.widgetManager) 
+      {
+         var LineWidgets = $wnd.require("ace/line_widgets").LineWidgets;
+         session.widgetManager = new LineWidgets(session);
+         session.widgetManager.attach(this);
+      }
+      return session.widgetManager;
+   }-*/; 
 
    public native final void resize() /*-{
       this.resize();
@@ -123,7 +134,7 @@ public class AceEditorNative extends JavaScriptObject {
    public native final boolean isVimInInsertMode() /*-{
       return this.state.cm.state.vim.insertMode;
    }-*/;
-
+   
    public native final void onChange(CommandWithArg<AceDocumentChangeEventNative> command) /*-{
       this.getSession().on("change",
         $entry(function (arg) {
@@ -419,8 +430,15 @@ public class AceEditorNative extends JavaScriptObject {
    
    public final void retokenizeDocument()
    {
+      resetTokenizer();
       tokenizeUpToRow(getSession().getLength() - 1);
    }
+   
+   public final native void resetTokenizer() /*-{
+      var session = this.getSession();
+      var tokenizer = session.bgTokenizer;
+      tokenizer.currentLine = 0;
+   }-*/;
    
    public final native void tokenizeUpToRow(int row) /*-{
       var session = this.getSession();
@@ -525,6 +543,41 @@ public class AceEditorNative extends JavaScriptObject {
    
    public final native void setSurroundSelectionPref(String value) /*-{
       this.$surroundSelection = value;
+   }-*/;
+   
+   public final native boolean isVimModeOn() /*-{
+      return this.$vimModeHandler != null;
+   }-*/;
+   
+   public final native boolean isEmacsModeOn() /*-{
+      return this.$emacsModeHandler != null;
+   }-*/;
+   
+   // Get the underlying Ace instance associated with a DOM element.
+   // This element may either be a child of the parent Ace container,
+   // or the element itself.
+   public static final native AceEditorNative getEditor(Element el) /*-{
+      while (el != null) {
+         if (el.env && el.env.editor)
+            return el.env.editor;
+         el = el.parentNode;
+      }
+      return null;
+   }-*/;
+   
+   public final native void disableSearchHighlight() /*-{
+      var highlight = this.session.$searchHighlight;
+      if (highlight) {
+         highlight.$update = highlight.update;
+         highlight.update = function() {}
+      }
+   }-*/;
+   
+   public final native void enableSearchHighlight() /*-{
+      var highlight = this.session.$searchHighlight;
+      if (highlight && highlight.$update) {
+         highlight.update = highlight.$update;
+      }
    }-*/;
    
    private static boolean uiPrefsSynced_ = false;

@@ -15,6 +15,7 @@
 package org.rstudio.studio.client.workbench.views.console;
 
 import com.google.gwt.core.client.GWT;
+import com.google.gwt.user.client.Timer;
 import com.google.gwt.user.client.ui.IsWidget;
 import com.google.inject.Inject;
 
@@ -22,6 +23,7 @@ import org.rstudio.core.client.command.CommandBinder;
 import org.rstudio.core.client.command.Handler;
 import org.rstudio.core.client.dom.WindowEx;
 import org.rstudio.core.client.layout.DelayFadeInHelper;
+import org.rstudio.core.client.widget.FocusContext;
 import org.rstudio.studio.client.application.events.EventBus;
 import org.rstudio.studio.client.workbench.commands.Commands;
 import org.rstudio.studio.client.workbench.events.BusyEvent;
@@ -33,6 +35,7 @@ import org.rstudio.studio.client.workbench.views.console.events.ConsolePromptHan
 import org.rstudio.studio.client.workbench.views.console.events.SendToConsoleEvent;
 import org.rstudio.studio.client.workbench.views.console.events.SendToConsoleHandler;
 import org.rstudio.studio.client.workbench.views.environment.events.DebugModeChangedEvent;
+import org.rstudio.studio.client.workbench.views.source.editors.profiler.RprofEvent;
 
 public class Console
 {
@@ -44,7 +47,9 @@ public class Console
       void focus();
       void ensureCursorVisible();
       IsWidget getConsoleInterruptButton();
+      IsWidget getProfilerInterruptButton();
       void setDebugMode(boolean debugMode);
+      void setProfilerMode(boolean profilerMode);
    }
    
    @Inject
@@ -57,13 +62,14 @@ public class Console
       {
          public void onSendToConsole(SendToConsoleEvent event)
          {
-            view.bringToFront();
+            if (event.shouldRaise())
+               view.bringToFront();
          }
       });
 
       ((Binder) GWT.create(Binder.class)).bind(commands, this);
 
-      fadeInHelper_ = new DelayFadeInHelper(
+      interruptFadeInHelper_ = new DelayFadeInHelper(
             view_.getConsoleInterruptButton().asWidget());
       events.addHandler(BusyEvent.TYPE, new BusyHandler()
       {
@@ -71,7 +77,30 @@ public class Console
          public void onBusy(BusyEvent event)
          {
             if (event.isBusy())
-               fadeInHelper_.beginShow();
+               interruptFadeInHelper_.beginShow();
+         }
+      });
+      
+      profilerFadeInHelper_ = new DelayFadeInHelper(
+            view_.getProfilerInterruptButton().asWidget());
+      events.addHandler(RprofEvent.TYPE, new RprofEvent.Handler()
+      {
+         @Override
+         public void onRprofEvent(RprofEvent event)
+         {
+            switch (event.getEventType())
+            {
+               case START:
+                  view.setProfilerMode(true);
+                  profilerFadeInHelper_.beginShow();
+                  break;
+               case STOP:
+                  view.setProfilerMode(false);
+                  profilerFadeInHelper_.hide();
+                  break;
+               default:
+                  break;
+            }
          }
       });
 
@@ -80,7 +109,7 @@ public class Console
          @Override
          public void onConsolePrompt(ConsolePromptEvent event)
          {
-            fadeInHelper_.hide();
+            interruptFadeInHelper_.hide();
          }
       });
       
@@ -113,12 +142,32 @@ public class Console
    
    private void activateConsole(boolean focusWindow)
    {
+      // ensure we don't leave focus in the console
+      final FocusContext focusContext = new FocusContext();
+      if (!focusWindow)
+         focusContext.record();
+      
       if (focusWindow)
          WindowEx.get().focus();
       
       view_.bringToFront();
       view_.focus();
       view_.ensureCursorVisible();
+      
+      // the above code seems to always leave focus in the console
+      // (haven't been able to sort out why). this ensure it's restored
+      // if that's what the caller requested.
+      if (!focusWindow) 
+      {
+         new Timer() {
+   
+            @Override
+            public void run()
+            {
+               focusContext.restore(); 
+            }
+         }.schedule(100);
+      }    
    }
    
    @Handler
@@ -133,7 +182,8 @@ public class Console
       return view_ ;
    }
 
-   private final DelayFadeInHelper fadeInHelper_;
+   private final DelayFadeInHelper interruptFadeInHelper_;
+   private final DelayFadeInHelper profilerFadeInHelper_;
    private final EventBus events_;
    private final Display view_;
 }

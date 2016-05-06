@@ -314,6 +314,8 @@ struct Events : boost::noncopyable
    boost::signal<void ()>                    onBeforeExecute;
    boost::signal<void(const std::string&)>   onConsolePrompt;
    boost::signal<void(const std::string&)>   onConsoleInput;
+   boost::signal<void(const std::string&, const std::string&)>  
+                                             onActiveConsoleChanged;
    boost::signal<void (ConsoleOutputType, const std::string&)>
                                              onConsoleOutput;
    boost::signal<void (ChangeSource)>        onDetectChanges;
@@ -820,6 +822,13 @@ void showSourceMarkers(const SourceMarkerSet& markerSet,
 bool isLoadBalanced();
 
 bool usingMingwGcc49();
+
+bool isWebsiteProject();
+bool isBookdownWebsite();
+std::string websiteOutputDir();
+
+core::FilePath extractOutputFileCreated(const core::FilePath& inputFile,
+                                        const std::string& output);
 
 } // namespace module_context
 } // namespace session

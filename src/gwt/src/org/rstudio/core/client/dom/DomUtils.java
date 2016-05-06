@@ -1,7 +1,7 @@
 /*
  * DomUtils.java
  *
- * Copyright (C) 2009-12 by RStudio, Inc.
+ * Copyright (C) 2009-16 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -21,6 +21,7 @@ import com.google.gwt.core.client.JsArrayString;
 import com.google.gwt.dom.client.*;
 import com.google.gwt.dom.client.Element;
 import com.google.gwt.event.dom.client.HasAllKeyHandlers;
+import com.google.gwt.event.dom.client.KeyCodes;
 import com.google.gwt.event.dom.client.KeyDownEvent;
 import com.google.gwt.event.dom.client.KeyDownHandler;
 import com.google.gwt.event.dom.client.KeyPressEvent;
@@ -28,6 +29,8 @@ import com.google.gwt.event.dom.client.KeyPressHandler;
 import com.google.gwt.event.dom.client.KeyUpEvent;
 import com.google.gwt.event.dom.client.KeyUpHandler;
 import com.google.gwt.user.client.*;
+import com.google.gwt.user.client.ui.Label;
+import com.google.gwt.user.client.ui.RootPanel;
 import com.google.gwt.user.client.ui.UIObject;
 
 import org.rstudio.core.client.BrowseCap;
@@ -39,6 +42,8 @@ import org.rstudio.core.client.dom.impl.DomUtilsImpl;
 import org.rstudio.core.client.dom.impl.NodeRelativePosition;
 import org.rstudio.core.client.regex.Match;
 import org.rstudio.core.client.regex.Pattern;
+import org.rstudio.core.client.widget.FontSizer;
+import org.rstudio.studio.client.application.Desktop;
 
 /**
  * Helper methods that are mostly useful for interacting with 
@@ -907,4 +912,102 @@ public class DomUtils
       document.execCommand("Copy", false, null);
       document.body.removeChild(copyElem);
    }-*/;
+   
+   public static final String extractCssValue(String className, 
+         String propertyName)
+   {
+      JsArrayString classes = JsArrayString.createArray().cast();
+      classes.push(className);
+      return extractCssValue(classes, propertyName);
+   }
+   
+   public static final boolean preventBackspaceCausingBrowserBack(NativeEvent event)
+   {
+      if (Desktop.isDesktop())
+         return false;
+      
+      if (event.getKeyCode() != KeyCodes.KEY_BACKSPACE)
+         return false;
+      
+      EventTarget target = event.getEventTarget();
+      if (target == null)
+         return false;
+      
+      Element elementTarget = Element.as(target);
+      if (!elementTarget.getNodeName().equals("BODY"))
+         return false;
+      
+      event.preventDefault();
+      return true;
+   }
+   
+   public static final native String extractCssValue(JsArrayString className, 
+         String propertyName) /*-{
+      // A more elegant way of performing this would be to iterate through the
+      // document's styleSheet collection, but unfortunately browsers don't 
+      // expose the cssRules in all cases 
+      var ele = null, parent = null, root = null;
+      for (var i = 0; i < className.length; i++)
+      {
+         ele = $doc.createElement("div");
+         ele.style.display = "none";
+         ele.className = className[i];
+         if (parent != null)
+            parent.appendChild(ele);
+         parent = ele;
+         if (root == null) 
+            root = ele;
+      }
+      $doc.body.appendChild(root);
+      var computed = $wnd.getComputedStyle(ele);
+      var result = computed[propertyName] || "";
+      $doc.body.removeChild(root);
+      return result;
+   }-*/;
+
+   public static int getCharacterWidth(int clientWidth, int offsetWidth,
+         String style)
+   {
+      // create width checker label and add it to the root panel
+      Label widthChecker = new Label();
+      widthChecker.setStylePrimaryName(style);
+      FontSizer.applyNormalFontSize(widthChecker);
+      RootPanel.get().add(widthChecker, -1000, -1000);
+      
+      // put the text into the label, measure it, and remove it
+      String text = new String("abcdefghijklmnopqrstuvwzyz0123456789");
+      widthChecker.setText(text);
+      int labelWidth = widthChecker.getOffsetWidth();
+      RootPanel.get().remove(widthChecker);
+      
+      // compute the points per character 
+      float pointsPerCharacter = (float)labelWidth / (float)text.length();
+      
+      // compute client width
+      if (clientWidth == offsetWidth)
+      {
+         // if the two widths are the same then there are no scrollbars.
+         // however, we know there will eventually be a scrollbar so we 
+         // should offset by an estimated amount
+         // (is there a more accurate way to estimate this?)
+         clientWidth -= ESTIMATED_SCROLLBAR_WIDTH;
+      }
+      
+      // compute character width (add pad so characters aren't flush to right)
+      final int RIGHT_CHARACTER_PAD = 2;
+      int width = Math.round((float)clientWidth / pointsPerCharacter) - 
+            RIGHT_CHARACTER_PAD;
+
+      // enforce a minimum width
+      final int MINIMUM_WIDTH = 30;
+      return Math.max(width, MINIMUM_WIDTH);
+   }
+
+   public static int getCharacterWidth(Element ele, String style)
+   {
+      return getCharacterWidth(ele.getClientWidth(), ele.getOffsetWidth(), 
+            style);
+   }
+
+   public static final int ESTIMATED_SCROLLBAR_WIDTH = 19;
 }

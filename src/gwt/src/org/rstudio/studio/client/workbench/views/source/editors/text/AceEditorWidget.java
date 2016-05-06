@@ -44,9 +44,9 @@ import org.rstudio.core.client.StringUtil;
 import org.rstudio.core.client.widget.FontSizer;
 import org.rstudio.studio.client.RStudioGinjector;
 import org.rstudio.studio.client.application.events.EventBus;
+import org.rstudio.studio.client.common.Value;
 import org.rstudio.studio.client.common.debugging.model.Breakpoint;
-import org.rstudio.studio.client.events.BeginPasteEvent;
-import org.rstudio.studio.client.events.EndPasteEvent;
+import org.rstudio.studio.client.events.*;
 import org.rstudio.studio.client.server.Void;
 import org.rstudio.studio.client.workbench.commands.Commands;
 import org.rstudio.studio.client.workbench.commands.RStudioCommandExecutedFromShortcutEvent;
@@ -59,7 +59,7 @@ import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceEdit
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceMouseEventNative;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Anchor;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AnchoredRange;
-import org.rstudio.studio.client.workbench.views.source.editors.text.ace.ExecuteChunksEvent;
+import org.rstudio.studio.client.workbench.views.source.editors.text.ace.LineWidgetManager;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Marker;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Range;
@@ -71,7 +71,8 @@ public class AceEditorWidget extends Composite
       implements RequiresResize,
                  HasValueChangeHandlers<Void>,
                  HasFoldChangeHandlers,
-                 HasAllKeyHandlers
+                 HasAllKeyHandlers,
+                 EditEvent.Handler
 {
    
    public AceEditorWidget()
@@ -245,6 +246,7 @@ public class AceEditorWidget extends Composite
                public void execute(Void event)
                {
                   fireEvent(new RenderFinishedEvent());
+                  isRendered_ = true;
                   events_.fireEvent(new AfterAceRenderEvent(AceEditorWidget.this.getEditor()));
                }
             }));
@@ -263,29 +265,11 @@ public class AceEditorWidget extends Composite
          }
       });
       
-      events_.addHandler(
-            BeginPasteEvent.TYPE,
-            new BeginPasteEvent.Handler()
-            {
-               
-               @Override
-               public void onBeginPaste(BeginPasteEvent event)
-               {
-                  maybeUnmapCtrlV();
-               }
-            });
-      
-      events_.addHandler(
-            EndPasteEvent.TYPE,
-            new EndPasteEvent.Handler()
-            {
-               
-               @Override
-               public void onEndPaste(EndPasteEvent event)
-               {
-                  maybeRemapCtrlV();
-               }
-            });
+      if (!hasEditHandlers_)
+      {
+         events_.addHandler(EditEvent.TYPE, this);
+         hasEditHandlers_ = true;
+      }
       
       events_.addHandler(
             RStudioCommandExecutedFromShortcutEvent.TYPE,
@@ -309,33 +293,82 @@ public class AceEditorWidget extends Composite
       keyBinding.$data = {editor: editor};
    }-*/;
    
-   private static native final void maybeUnmapCtrlV() /*-{
+   public void onEdit(EditEvent edit)
+   {
+      if (edit.isBeforeEdit())
+         unmapForEdit(edit.getType());
+      else
+         remapForEdit(edit.getType());
+   }
+   
+   private final void unmapForEdit(int type)
+   {
+      if (type == EditEvent.TYPE_COPY)
+         unmapForEditImpl("<C-c>", "c-c");
+      else if (type == EditEvent.TYPE_CUT)
+         unmapForEditImpl("<C-x>", "c-x");
+      else if (type == EditEvent.TYPE_PASTE)
+         unmapForEditImpl("<C-v>", "c-v");
+   }
+   
+   private final void remapForEdit(int type)
+   {
+      if (type == EditEvent.TYPE_COPY)
+         remapForEditImpl("<C-c>", "c-c");
+      else if (type == EditEvent.TYPE_CUT)
+         remapForEditImpl("<C-x>", "c-x");
+      else if (type == EditEvent.TYPE_PASTE)
+         remapForEditImpl("<C-v>", "c-v");
+   }
+   
+   private static final native void unmapForEditImpl(String vimKeys, String emacsKeys)
+   /*-{
+      
+      // Handle Vim mapping
       var Vim = $wnd.require("ace/keyboard/vim").handler;
       var keymap = Vim.defaultKeymap;
       for (var i = 0; i < keymap.length; i++) {
-         if (keymap[i].keys === "<C-v>") {
-            keymap[i].keys = "<DISABLED:C-v>";
+         if (keymap[i].keys === vimKeys) {
+            keymap[i].keys = "DISABLED:" + vimKeys;
             break;
          }
       }
+      
+      // Handle Emacs mapping
+      var Emacs = $wnd.require("ace/keyboard/emacs").handler;
+      var bindings = Emacs.commandKeyBinding;
+      bindings["DISABLED:" + emacsKeys] = bindings[emacsKeys];
+      delete bindings[emacsKeys];
+      
+      
    }-*/;
    
-   private static native final void maybeRemapCtrlV() /*-{
+   private static final native void remapForEditImpl(String vimKeys, String emacsKeys)
+   /*-{
+      
+      // Handle Vim mapping
       var Vim = $wnd.require("ace/keyboard/vim").handler;
       var keymap = Vim.defaultKeymap;
       for (var i = 0; i < keymap.length; i++) {
-         if (keymap[i].keys === "<DISABLED:C-v>") {
-            keymap[i].keys = "<C-v>";
+         if (keymap[i].keys === "DISABLED:" + vimKeys) {
+            keymap[i].keys = vimKeys;
             break;
          }
+      }
+      
+      // Handle Emacs mapping
+      var Emacs = $wnd.require("ace/keyboard/emacs").handler;
+      var bindings = Emacs.commandKeyBinding;
+      if (bindings["DISABLED:" + emacsKeys] != null) {
+         bindings[emacsKeys] = bindings["DISABLED:" + emacsKeys];
+         delete bindings["DISABLED:" + emacsKeys];
       }
    }-*/;
    
    @Inject
-   private void initialize(EventBus events, ChunkIconsManager manager)
+   private void initialize(EventBus events)
    {
       events_ = events;
-      chunkIconsManager_ = manager;
    }
    
    public HandlerRegistration addCursorChangedHandler(
@@ -503,11 +536,6 @@ public class AceEditorWidget extends Composite
       return addHandler(handler, AceClickEvent.TYPE);
    }
    
-   public HandlerRegistration addExecuteChunkHandler(ExecuteChunksEvent.Handler handler)
-   {
-      return addHandler(handler, ExecuteChunksEvent.TYPE);
-   }
-   
    public void forceResize()
    {
       editor_.getRenderer().onResize(true);
@@ -556,6 +584,49 @@ public class AceEditorWidget extends Composite
          removeBreakpointMarker(breakpoint);
       }
       breakpoints_.clear();
+   }
+   
+   public void setChunkLineExecState(int start, int end, int state)
+   {
+      for (int i = start; i <= end; i++)
+      {
+         for (int j = 0; j < lineExecState_.size(); j++)
+         {
+            int row = lineExecState_.get(j).getRow();
+            if (row == i)
+            {
+               if (state == ChunkRowExecState.LINE_QUEUED ||
+                   state == ChunkRowExecState.LINE_NONE)
+               {
+                  // we're cleaning up state, or queuing a line that still has
+                  // state -- detach it immediately
+                  lineExecState_.get(j).detach();
+               }
+               else
+               {
+                  lineExecState_.get(j).setState(state);
+               }
+               break;
+            }
+         }
+
+         if (state == ChunkRowExecState.LINE_QUEUED)
+         {
+            // queued state: introduce to the editor
+            final Value<ChunkRowExecState> execState = 
+                  new Value<ChunkRowExecState>(null);
+            execState.setValue(
+                  new ChunkRowExecState(editor_, i, state, new Command()
+                        {
+                           @Override
+                           public void execute()
+                           {
+                              lineExecState_.remove(execState.getValue());
+                           }
+                        }));
+            lineExecState_.add(execState.getValue());
+         }
+      }
    }
    
    public boolean hasBreakpoints()
@@ -1028,20 +1099,31 @@ public class AceEditorWidget extends Composite
       editor_.setReadOnly(!enabled);
    }
    
+   public LineWidgetManager getLineWidgetManager()
+   {
+      return editor_.getLineWidgetManager();
+   }
+   
+   public boolean isRendered()
+   {
+      return isRendered_;
+   }
+
    private final AceEditorNative editor_;
    private final HandlerManager capturingHandlers_;
    private final List<HandlerRegistration> aceEventHandlers_;
    private boolean initToEmptyString_ = true;
    private boolean inOnChangeHandler_ = false;
+   private boolean isRendered_ = false;
    private ArrayList<Breakpoint> breakpoints_ = new ArrayList<Breakpoint>();
-   
    private ArrayList<AnchoredAceAnnotation> annotations_ =
          new ArrayList<AnchoredAceAnnotation>();
+   private ArrayList<ChunkRowExecState> lineExecState_ = 
+         new ArrayList<ChunkRowExecState>();
    private LintResources.Styles lintStyles_ = LintResources.INSTANCE.styles();
    
    private EventBus events_;
-   private ChunkIconsManager chunkIconsManager_;
    private Commands commands_ = RStudioGinjector.INSTANCE.getCommands();
    
-   
+   private static boolean hasEditHandlers_ = false;
 }

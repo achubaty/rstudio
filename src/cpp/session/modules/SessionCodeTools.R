@@ -316,7 +316,7 @@
 
 .rs.addFunction("getPendingInput", function()
 {
-   .Call(.rs.routines$rs_getPendingInput)
+   .Call("rs_getPendingInput")
 })
 
 .rs.addFunction("doStripSurrounding", function(string, complements)
@@ -416,8 +416,10 @@
       return(object)
    
    body <- body(object)
+   if (is.symbol(body))
+     return(object)
+
    env <- environment(object)
-   
    if (length(body) && .rs.isSymbolCalled(body[[1]], ".rs.callAs"))
       return(env$original)
    
@@ -653,7 +655,7 @@
 
 .rs.addFunction("isSubsequence", function(strings, string)
 {
-   .Call(.rs.routines$rs_isSubsequence, strings, string)
+   .Call("rs_isSubsequence", strings, string)
 })
 
 .rs.addFunction("whichIsSubsequence", function(strings, string)
@@ -744,33 +746,25 @@
 
 .rs.addFunction("packageNameForSourceFile", function(filePath)
 {
-   .Call(.rs.routines$rs_packageNameForSourceFile, filePath)
+   .Call("rs_packageNameForSourceFile", filePath)
 })
 
 .rs.addFunction("isRScriptInPackageBuildTarget", function(filePath)
 {
-   .Call(.rs.routines$rs_isRScriptInPackageBuildTarget, filePath)
+   .Call("rs_isRScriptInPackageBuildTarget", filePath)
 })
 
 .rs.addFunction("namedVectorAsList", function(vector)
 {
-   # Early escape for zero-length vectors
-   if (!length(vector))
-   {
-      return(list(
-         values = NULL,
-         names = NULL
-      ))
-   }
-   
    values <- unlist(vector, use.names = FALSE)
+   if (!length(values))
+      return(list(names = NULL, values = NULL))
    vectorNames <- names(vector)
-   names <- unlist(lapply(1:length(vector), function(i) {
+   names <- unlist(lapply(seq_along(vector), function(i) {
       rep.int(vectorNames[i], length(vector[[i]]))
    }))
    
-   list(values = values,
-        names = names)
+   list(names = names, values = values)
 })
 
 .rs.addFunction("getDollarNamesMethod", function(object,
@@ -801,7 +795,7 @@
 .rs.addJsonRpcHandler("get_args", function(name, src)
 {
    if (identical(src, ""))
-      src <- NULL
+      src <- .GlobalEnv
    
    result <- .rs.getSignature(.rs.getAnywhere(name, src))
    result <- sub("function ", "", result)
@@ -836,17 +830,17 @@
 
 .rs.addFunction("scoreMatches", function(strings, string)
 {
-   .Call(.rs.routines$rs_scoreMatches, strings, string)
+   .Call("rs_scoreMatches", strings, string)
 })
 
 .rs.addFunction("getProjectDirectory", function()
 {
-   .Call(.rs.routines$rs_getProjectDirectory)
+   .Call("rs_getProjectDirectory")
 })
 
 .rs.addFunction("hasFileMonitor", function()
 {
-   .Call(.rs.routines$rs_hasFileMonitor)
+   .Call("rs_hasFileMonitor")
 })
 
 .rs.addFunction("listIndexedFiles", function(term = "",
@@ -856,7 +850,7 @@
    if (is.null(.rs.getProjectDirectory()))
       return(NULL)
    
-   .Call(.rs.routines$rs_listIndexedFiles,
+   .Call("rs_listIndexedFiles",
          term,
          suppressWarnings(.rs.normalizePath(inDirectory)),
          as.integer(maxCount))
@@ -869,7 +863,7 @@
    if (is.null(inDirectory))
       return(character())
    
-   .Call(.rs.routines$rs_listIndexedFolders, term, inDirectory, maxCount)
+   .Call("rs_listIndexedFolders", term, inDirectory, maxCount)
 })
 
 .rs.addFunction("listIndexedFilesAndFolders", function(term = "",
@@ -879,7 +873,7 @@
    if (is.null(inDirectory))
       return(character())
    
-   .Call(.rs.routines$rs_listIndexedFilesAndFolders, term, inDirectory, maxCount)
+   .Call("rs_listIndexedFilesAndFolders", term, inDirectory, maxCount)
 })
 
 .rs.addFunction("doGetIndex", function(term = "",
@@ -974,7 +968,9 @@
 ## NOTE: lists are considered as objects if they are named, and as arrays if
 ## they are not. If you have an empty list that you want to treat as an object,
 ## you must give it a names attribute.
-.rs.addFunction("toJSON", function(object)
+##
+## Unbox will automatically unbox any 1-length non-list vectors.
+.rs.addFunction("toJSON", function(object, unbox = FALSE)
 {
    AsIs <- inherits(object, "AsIs") || inherits(object, ".rs.scalar")
    if (is.list(object))
@@ -982,7 +978,7 @@
       if (is.null(names(object)))
       {
          return(paste('[', paste(lapply(seq_along(object), function(i) {
-            .rs.toJSON(object[[i]])
+            .rs.toJSON(object[[i]], unbox = unbox)
          }), collapse = ','), ']', sep = '', collapse=','))
       }
       else
@@ -992,15 +988,24 @@
                   '"',
                   .rs.jsonEscapeString(enc2utf8(names(object)[[i]])),
                   '":',
-                  .rs.toJSON(object[[i]])
+                  .rs.toJSON(object[[i]], unbox = unbox)
             )
          }), collapse = ','), '}', sep = '', collapse = ','))
       }
    }
    else
    {
+      n <- length(object)
+      
       # NOTE: For type safety we cannot unmarshal NULL as '{}' as e.g. jsonlite does.
-      if (!length(object))
+      if (is.null(object))
+      {
+         if (unbox)
+            return('null')
+         else
+            return('[]')
+      }
+      else if (n == 0)
       {
          return('[]')
       }
@@ -1017,12 +1022,12 @@
       }
       else if (is.logical(object))
       {
-
+         object <- ifelse(object, "true", "false")
          object[is.na(object)] <- 'null'
       }
       
-      if (AsIs)
-         return(object)
+      if (AsIs || (unbox && n == 1))
+         return(paste(object))
       else
          return(paste('[', paste(object, collapse = ','), ']', sep = '', collapse = ','))
    }
@@ -1522,32 +1527,6 @@
    symbols
 })
 
-.rs.addFunction("registerNativeRoutines", function()
-{
-   pos <- match("tools:rstudio", search())
-   if (is.na(pos))
-      return()
-   
-   if (exists(".rs.routines", pos))
-      return()
-   
-   routineEnv <- new.env(parent = emptyenv())
-   routines <- tryCatch(
-      getDLLRegisteredRoutines("(embedding)"),
-      error = function(e) NULL
-   )
-   
-   if (is.null(routines))
-      return(NULL)
-   
-   .CallRoutines <- routines[[".Call"]]
-   lapply(.CallRoutines, function(routine) {
-      routineEnv[[routine$name]] <- routine
-   })
-   assign(".rs.routines", routineEnv, pos = which(search() == "tools:rstudio"))
-   routineEnv
-})
-
 .rs.addFunction("setEncodingUnknownToUTF8", function(object)
 {
    if (is.character(object) && Encoding(object) == "unknown")
@@ -1663,4 +1642,57 @@
       result[[i]] <- .rs.scalar(result[[i]])
    
    return(result)
+})
+
+.rs.addFunction("enumerate", function(list, f, ...)
+{
+   lapply(seq_along(list), function(i) {
+      f(names(list)[[i]], list[[i]], ...)
+   })
+})
+
+.rs.addFunction("cutpoints", function(data)
+{
+   diffed <- diff(c(data[1], data))
+   which(diffed != 0)
+})
+
+.rs.addFunction("recode", function(data, ..., envir = parent.frame())
+{
+   dots <- eval(substitute(alist(...)))
+   
+   for (expr in dots)
+   {
+      if (length(expr) != 3)
+         stop("malformed recoding in .rs.recode()", call. = FALSE)
+      
+      lhs <- eval(expr[[2]], envir = envir)
+      rhs <- eval(expr[[3]], envir = envir)
+      data[data == lhs] <- rhs
+   }
+   
+   data
+})
+
+.rs.addFunction("evalWithAvailableArguments", function(fn, args)
+{
+   filtered <- args[names(args) %in% names(formals(fn))]
+   call <- c(substitute(fn), filtered)
+   mode(call) <- "call"
+   eval(call, envir = parent.frame())
+})
+
+.rs.addFunction("transposeList", function(list)
+{
+   do.call(Map, c(c, list, USE.NAMES = FALSE))
+})
+
+.rs.addFunction("base64encode", function(data, binary = FALSE)
+{
+   .Call("rs_base64encode", data, binary)
+})
+
+.rs.addFunction("base64decode", function(data, binary = FALSE)
+{
+   .Call("rs_base64decode", data, binary)
 })

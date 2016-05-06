@@ -1,7 +1,7 @@
 #
 # CMakeLists.txt
 #
-# Copyright (C) 2009-12 by RStudio, Inc.
+# Copyright (C) 2009-16 by RStudio, Inc.
 #
 # Unless you have received this program directly from RStudio pursuant
 # to the terms of a commercial license agreement with RStudio, then
@@ -28,10 +28,12 @@ endif()
 if(NOT EXISTS "${RSTUDIO_DEPENDENCIES_DIR}/common/pandoc")
   message(FATAL_ERROR "pandoc not found (re-run install-dependencies script to install)")
 endif()
-if(NOT EXISTS "${RSTUDIO_DEPENDENCIES_DIR}/common/rsconnect")
-  message(FATAL_ERROR "rsconnect package not found (re-run install-dependencies script to install)")
+if(NOT EXISTS "${RSTUDIO_DEPENDENCIES_DIR}/common/rmarkdown")
+  message(FATAL_ERROR "rmarkdown package not found (re-run install-dependencies script to install)")
 endif()
-
+if(NOT EXISTS "${RSTUDIO_DEPENDENCIES_DIR}/common/profvis")
+  message(FATAL_ERROR "profvis package not found (re-run install-dependencies script to install)")
+endif()
 
 # verify libclang is installed
 if(WIN32)
@@ -151,6 +153,16 @@ set (SESSION_SOURCE_FILES
    modules/presentation/Tutorial.cpp
    modules/presentation/TutorialInstaller.cpp
    modules/rmarkdown/SessionRMarkdown.cpp
+   modules/rmarkdown/SessionRmdNotebook.cpp
+   modules/rmarkdown/SessionRnbParser.cpp
+   modules/rmarkdown/NotebookCache.cpp
+   modules/rmarkdown/NotebookChunkDefs.cpp
+   modules/rmarkdown/NotebookErrors.cpp
+   modules/rmarkdown/NotebookExec.cpp
+   modules/rmarkdown/NotebookHtmlWidgets.cpp
+   modules/rmarkdown/NotebookOutput.cpp
+   modules/rmarkdown/NotebookPaths.cpp
+   modules/rmarkdown/NotebookPlots.cpp
    modules/rmarkdown/RMarkdownPresentation.cpp
    modules/shiny/SessionShiny.cpp
    modules/tex/SessionCompilePdf.cpp
@@ -405,15 +417,20 @@ if (NOT RSTUDIO_SESSION_WIN64)
       # static Pandoc binaries (see dependencies/common/install-pandoc)
       set(PANDOC_EXTENSION_DIR "/static")
    endif()
-   set(PANDOC_BIN "${RSTUDIO_DEPENDENCIES_DIR}/common/pandoc/1.15.2${PANDOC_EXTENSION_DIR}")
+   set(PANDOC_BIN "${RSTUDIO_DEPENDENCIES_DIR}/common/pandoc/1.17.0.2${PANDOC_EXTENSION_DIR}")
    file(GLOB PANDOC_FILES "${PANDOC_BIN}/pandoc*")
    install(FILES ${PANDOC_FILES}
            PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
            DESTINATION  ${RSTUDIO_INSTALL_BIN}/pandoc)
 
-   # install rsconnect package
-   file(GLOB RSCONNECT_PACKAGE "${RSTUDIO_DEPENDENCIES_DIR}/common/rsconnect*.tar.gz")
-   install(FILES ${RSCONNECT_PACKAGE}
+   # install rmarkdown package
+   file(GLOB RMARKDOWN_PACKAGE "${RSTUDIO_DEPENDENCIES_DIR}/common/rmarkdown*.tar.gz")
+   install(FILES ${RMARKDOWN_PACKAGE}
+           DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/R/packages)
+
+   # install profvis package
+   file(GLOB PROFVIS_PACKAGE "${RSTUDIO_DEPENDENCIES_DIR}/common/profvis*.tar.gz")
+   install(FILES ${PROFVIS_PACKAGE}
            DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/R/packages)
 
    # install PDF.js
@@ -426,6 +443,10 @@ if (NOT RSTUDIO_SESSION_WIN64)
 
    # help resources
    install(DIRECTORY "resources/help_resources"
+           DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/resources)
+
+   # notebook resources
+   install(DIRECTORY "resources/notebook"
            DESTINATION ${RSTUDIO_INSTALL_SUPPORTING}/resources)
 
    # install libclang

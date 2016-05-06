@@ -89,6 +89,9 @@ public class FileSystemItem extends JavaScriptObject
    public static String getExtensionFromPath(String path)
    {
       String filename = getNameFromPath(path);
+      if (filename.endsWith(".nb.html"))
+         return ".nb.html";
+      
       int lastDotIndex = filename.lastIndexOf('.');
       if (lastDotIndex != -1)
          return filename.substring(lastDotIndex);
@@ -388,6 +391,7 @@ public class FileSystemItem extends JavaScriptObject
       MIME_TYPES.put( "gitignore",   "text/plain");
       MIME_TYPES.put( "rbuildignore","text/plain");
       MIME_TYPES.put( "rprofile", "text/x-r-source");
+      MIME_TYPES.put( "rprofvis", "text/x-r-profile");
 
       MIME_TYPES.put( "tif",   "image/tiff" );
       MIME_TYPES.put( "tiff",  "image/tiff" );

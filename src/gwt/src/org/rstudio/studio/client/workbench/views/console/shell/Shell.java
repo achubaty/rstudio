@@ -242,6 +242,7 @@ public class Shell implements ConsoleInputHandler,
    public void onConsoleInput(final ConsoleInputEvent event)
    {
       server_.consoleInput(event.getInput(), 
+                           event.getConsole(),
                            new ServerRequestCallback<Void>() {
          @Override
          public void onError(ServerError error) 
@@ -338,7 +339,7 @@ public class Shell implements ConsoleInputHandler,
          addToHistory(commandText);
 
       // fire event 
-      eventBus_.fireEvent(new ConsoleInputEvent(commandText));
+      eventBus_.fireEvent(new ConsoleInputEvent(commandText, ""));
    }
 
    public void onSendToConsole(final SendToConsoleEvent event)
@@ -398,7 +399,7 @@ public class Shell implements ConsoleInputHandler,
       // call a method on the SourceShim
       else
       {
-         commands_.executeCodeWithoutFocus().execute();
+         commands_.getCommandById(event.getCommandId()).execute();
       }
    }
    
@@ -505,7 +506,7 @@ public class Shell implements ConsoleInputHandler,
                {
                   // if the input is already empty then send a console reset
                   // which will jump us back to the main prompt
-                  eventBus_.fireEvent(new ConsoleInputEvent(null));
+                  eventBus_.fireEvent(new ConsoleInputEvent(null, ""));
                }
             }
              

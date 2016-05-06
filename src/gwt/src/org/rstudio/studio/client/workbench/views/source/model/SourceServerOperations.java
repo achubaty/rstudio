@@ -14,11 +14,12 @@
  */
 package org.rstudio.studio.client.workbench.views.source.model;
 
+import com.google.gwt.core.client.JsArray;
 import com.google.gwt.core.client.JsArrayString;
 
 import org.rstudio.core.client.js.JsObject;
 import org.rstudio.studio.client.common.codetools.CodeToolsServerOperations;
-import org.rstudio.studio.client.events.GetActiveDocumentContextEvent;
+import org.rstudio.studio.client.events.GetEditorContextEvent;
 import org.rstudio.studio.client.htmlpreview.model.HTMLPreviewServerOperations;
 import org.rstudio.studio.client.notebook.CompileNotebookOptions;
 import org.rstudio.studio.client.notebook.CompileNotebookResult;
@@ -27,11 +28,11 @@ import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.server.Void;
 import org.rstudio.studio.client.workbench.codesearch.model.CodeSearchServerOperations;
 import org.rstudio.studio.client.workbench.views.buildtools.model.BuildServerOperations;
-import org.rstudio.studio.client.workbench.views.environment.dataimport.model.DataImportServerOperations;
 import org.rstudio.studio.client.workbench.views.files.model.FilesServerOperations;
 import org.rstudio.studio.client.workbench.views.output.lint.model.LintServerOperations;
 import org.rstudio.studio.client.workbench.views.presentation.model.PresentationServerOperations;
 import org.rstudio.studio.client.workbench.views.source.editors.text.IconvListResult;
+import org.rstudio.studio.client.workbench.views.source.editors.text.rmd.ChunkDefinition;
 
 import java.util.HashMap;
 import java.util.List;
@@ -91,6 +92,7 @@ public interface SourceServerOperations extends FilesServerOperations,
                      String fileType,
                      String encoding,
                      String foldSpec,
+                     JsArray<ChunkDefinition> chunkOutput,
                      String contents,
                      ServerRequestCallback<String> requestCallback);
 
@@ -111,6 +113,7 @@ public interface SourceServerOperations extends FilesServerOperations,
                          String fileType,
                          String encoding,
                          String foldSpec,
+                         JsArray<ChunkDefinition> chunkOutput,
                          String replacement,
                          int offset,
                          int length,
@@ -207,10 +210,6 @@ public interface SourceServerOperations extends FilesServerOperations,
    void removeCachedData(String cacheKey, 
                          ServerRequestCallback<Void> requestCallback);
    
-   void duplicateDataView(String caption, String envName, String objName, 
-                          String cacheKey,
-                          ServerRequestCallback<DataItem> requestCallback);
-   
    void ensureFileExists(String path,
                          ServerRequestCallback<Boolean> requestCallback);
    
@@ -229,9 +228,13 @@ public interface SourceServerOperations extends FilesServerOperations,
                               String appDir,
                               ServerRequestCallback<JsArrayString> requestCallback);
    
-   public void getActiveDocumentContextCompleted(GetActiveDocumentContextEvent.Data data,
-                                                 ServerRequestCallback<Void> requestCallback);
+   public void getEditorContextCompleted(GetEditorContextEvent.SelectionData data,
+                                         ServerRequestCallback<Void> requestCallback);
    
    public void setSourceDocumentDirty(String docId, boolean dirty,
          ServerRequestCallback<Void> requestCallback);
+   
+   public void extractRmdFromNotebook(String inputPath,
+                                      String outputPath,
+                                      ServerRequestCallback<Boolean> requestCallback);
 }

@@ -63,10 +63,6 @@ import org.rstudio.studio.client.common.vcs.SVNServerOperations;
 import org.rstudio.studio.client.common.vcs.VCSServerOperations;
 import org.rstudio.studio.client.common.vcs.ignore.Ignore;
 import org.rstudio.studio.client.common.vcs.ignore.IgnoreDialog;
-import org.rstudio.studio.client.dataviewer.DataTableView;
-import org.rstudio.studio.client.dataviewer.DataViewerPanel;
-import org.rstudio.studio.client.dataviewer.DataViewerPresenter;
-import org.rstudio.studio.client.dataviewer.DataViewerWindow;
 import org.rstudio.studio.client.htmlpreview.HTMLPreview;
 import org.rstudio.studio.client.htmlpreview.HTMLPreviewPresenter;
 import org.rstudio.studio.client.htmlpreview.model.HTMLPreviewServerOperations;
@@ -190,8 +186,8 @@ import org.rstudio.studio.client.workbench.views.source.editors.EditingTargetSou
 import org.rstudio.studio.client.workbench.views.source.editors.profiler.ProfilerPresenter;
 import org.rstudio.studio.client.workbench.views.source.editors.profiler.model.ProfilerServerOperations;
 import org.rstudio.studio.client.workbench.views.source.editors.text.AceEditor;
-import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkIconsManager;
 import org.rstudio.studio.client.workbench.views.source.editors.text.DocDisplay;
+import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceEditorCommandDispatcher;
 import org.rstudio.studio.client.workbench.views.source.model.CppServerOperations;
 import org.rstudio.studio.client.workbench.views.source.model.SourceServerOperations;
 import org.rstudio.studio.client.workbench.views.source.model.TexServerOperations;
@@ -226,7 +222,7 @@ public class RStudioGinModule extends AbstractGinModule
       bind(Satellite.class).in(Singleton.class);
       bind(SatelliteManager.class).in(Singleton.class);
       bind(AskPassManager.class).in(Singleton.class);
-      bind(ProfilerPresenter.class).asEagerSingleton();
+      bind(ProfilerPresenter.class).in(Singleton.class);
       bind(WorkbenchContext.class).asEagerSingleton();
       bind(DependencyManager.class).asEagerSingleton();
       bind(WorkbenchListManager.class).asEagerSingleton();
@@ -261,6 +257,7 @@ public class RStudioGinModule extends AbstractGinModule
       bind(ApplicationCommandManager.class).in(Singleton.class);
       bind(CodeSearchLauncher.class).in(Singleton.class);
       bind(AddinsMRUList.class).asEagerSingleton();
+      bind(AceEditorCommandDispatcher.class).asEagerSingleton();
 
       bind(ApplicationView.class).to(ApplicationWindow.class)
             .in(Singleton.class) ;
@@ -272,7 +269,6 @@ public class RStudioGinModule extends AbstractGinModule
       bind(HTMLPreviewApplicationView.class).to(HTMLPreviewApplicationWindow.class);
       bind(ShinyApplicationView.class).to(ShinyApplicationWindow.class);
       bind(RmdOutputView.class).to(RmdOutputWindow.class);
-      bind(DataTableView.class).to(DataViewerWindow.class);
       bind(SourceSatelliteView.class).to(SourceSatelliteWindow.class);
       
       bind(Server.class).to(RemoteServer.class) ;
@@ -332,7 +328,6 @@ public class RStudioGinModule extends AbstractGinModule
       bind(HTMLPreviewPresenter.Display.class).to(HTMLPreviewPanel.class);
       bind(ShinyApplicationPresenter.Display.class).to(ShinyApplicationPanel.class);
       bind(RmdOutputPresenter.Display.class).to(RmdOutputPanel.class);
-      bind(DataViewerPresenter.Display.class).to(DataViewerPanel.class);
       
       bind(GlobalDisplay.class)
             .to(DefaultGlobalDisplay.class)
@@ -388,8 +383,6 @@ public class RStudioGinModule extends AbstractGinModule
       bind(WorkbenchMainView.class).to(WorkbenchScreen.class) ;
 
       bind(DocDisplay.class).to(AceEditor.class);
-      
-      bind(ChunkIconsManager.class).in(Singleton.class);
       
       install(new GinFactoryModuleBuilder()
          .implement(CompileOutputPaneDisplay.class, CompileOutputPane.class)

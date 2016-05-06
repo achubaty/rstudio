@@ -59,7 +59,6 @@ import org.rstudio.studio.client.common.vcs.CreateKeyDialog;
 import org.rstudio.studio.client.common.vcs.ShowPublicKeyDialog;
 import org.rstudio.studio.client.common.vcs.SshKeyWidget;
 import org.rstudio.studio.client.common.vcs.ignore.IgnoreDialog;
-import org.rstudio.studio.client.dataviewer.DataViewerSatellite;
 import org.rstudio.studio.client.htmlpreview.HTMLPreviewApplication;
 import org.rstudio.studio.client.notebookv2.CompileNotebookv2OptionsDialog;
 import org.rstudio.studio.client.packrat.ui.PackratActionDialog;
@@ -76,7 +75,7 @@ import org.rstudio.studio.client.workbench.prefs.views.PreferencesDialog;
 import org.rstudio.studio.client.workbench.ui.unsaved.UnsavedChangesDialog;
 import org.rstudio.studio.client.workbench.views.buildtools.ui.BuildPaneResources;
 import org.rstudio.studio.client.workbench.views.console.ConsoleResources;
-import org.rstudio.studio.client.workbench.views.files.ui.FilesListCellTableResources;
+import org.rstudio.studio.client.workbench.views.files.ui.FilesListDataGridResources;
 import org.rstudio.studio.client.workbench.views.history.view.HistoryPane;
 import org.rstudio.studio.client.workbench.views.history.view.Shelf;
 import org.rstudio.studio.client.workbench.views.packages.ui.CheckForUpdatesDialog;
@@ -194,12 +193,6 @@ public class RStudio implements EntryPoint
                            RootLayoutPanel.get(), 
                            dismissProgressAnimation);
                   }
-                  else if (DataViewerSatellite.NAME.equals(view))
-                  {
-                     RStudioGinjector.INSTANCE.getDataViewerSatellite().go(
-                           RootLayoutPanel.get(), 
-                           dismissProgressAnimation);
-                  }
                   else if (view != null && 
                            view.startsWith(SourceSatellite.NAME_PREFIX))
                   {
@@ -228,7 +221,7 @@ public class RStudio implements EntryPoint
       FileDialogResources.INSTANCE.styles().ensureInjected();
       ManipulatorResources.INSTANCE.manipulatorStyles().ensureInjected();
       PackagesCellTableResources.INSTANCE.cellTableStyle().ensureInjected();
-      FilesListCellTableResources.INSTANCE.cellTableStyle().ensureInjected();
+      FilesListDataGridResources.INSTANCE.dataGridStyle().ensureInjected();
       ExportPlotResources.INSTANCE.styles().ensureInjected();
       CodeSearchResources.INSTANCE.styles().ensureInjected();
       SourceMarkerListResources.INSTANCE.styles().ensureInjected();

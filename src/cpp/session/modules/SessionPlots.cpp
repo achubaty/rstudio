@@ -291,46 +291,41 @@ Error plotsCreateRPubsHtml(const json::JsonRpcRequest& request,
    if (error)
       return error;
 
-   // form various other paths
-   FilePath sourceFilePath = tempPath.childPath("source.html");
-   FilePath targetFilePath = tempPath.childPath("target.html");
-   FilePath plotPath = tempPath.childPath("plot.png");
-
-   // save plot
+   // save small plot
    using namespace rstudio::r::session::graphics;
    Display& display = r::session::graphics::display();
-   error = display.savePlotAsImage(plotPath, "png", width, height);
+   FilePath smallPlotPath = tempPath.childPath("plot-small.png");
+   error = display.savePlotAsImage(smallPlotPath, "png", width, height);
    if (error)
    {
        LOG_ERROR(error);
        return error;
    }
 
-   // generate source file
-   boost::format fmt(
-       "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \n"
-            "\"http://www.w3.org/TR/html4/strict.dtd\">\n"
-       "<html lang=\"en\">\n"
-       "<head>\n"
-       "  <meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n"
-       "</head>\n"
-       "<body style=\"background-color: white;"
-                     "font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;\">\n"
-       "  <div style=\"width: %1%px; margin-left: auto; margin-right: auto;\">\n"
-       "    <img src=\"%2%\"/>\n"
-       "  </div>\n"
-       "</body>\n"
-       "</html>\n");
-   std::string html = boost::str(fmt % width % plotPath.filename());
-   error = core::writeStringToFile(sourceFilePath, html);
+   // save full plot
+   FilePath fullPlotPath = tempPath.childPath("plot-full.png");
+   error = display.savePlotAsImage(fullPlotPath, "png", 1024, 768, 2.0);
    if (error)
-      return error;
+   {
+       LOG_ERROR(error);
+       return error;
+   }
+
+   // copy source file to temp dir
+   FilePath sourceFilePath = tempPath.childPath("source.html");
+   FilePath resPath = session::options().rResourcesPath();
+   FilePath plotFilePath = resPath.complete("plot_publish.html");
+   error = plotFilePath.copy(sourceFilePath);
 
    // perform the base64 encode using pandoc
+   FilePath targetFilePath = tempPath.childPath("target.html");
    error = module_context::createSelfContainedHtml(sourceFilePath,
                                                    targetFilePath);
    if (error)
+   {
+      LOG_ERROR(error);
       return error;
+   }
 
    // return target path
    pResponse->setResult(module_context::createAliasedPath(targetFilePath));
@@ -815,6 +810,17 @@ Error manipulatorPlotClicked(const json::JsonRpcRequest& request,
    return Success();
 }
 
+SEXP rs_emitBeforeNewPlot()
+{
+   events().onBeforeNewPlot();
+   return R_NilValue;
+}
+
+SEXP rs_emitNewPlot()
+{
+   events().onNewPlot();
+   return R_NilValue;
+}
 
 
 } // anonymous namespace  
@@ -841,6 +847,12 @@ bool haveCairoPdf()
    return functionSEXP != R_NilValue;
 }
 
+Events& events()
+{
+   static Events instance;
+   return instance;
+}
+
 Error initialize()
 {
    // subscribe to events
@@ -849,6 +861,9 @@ Error initialize()
    module_context::events().onDetectChanges.connect(bind(onDetectChanges, _1));
    module_context::events().onBeforeExecute.connect(bind(onBeforeExecute));
    module_context::events().onBackgroundProcessing.connect(onBackgroundProcessing);
+
+   RS_REGISTER_CALL_METHOD(rs_emitBeforeNewPlot, 0);
+   RS_REGISTER_CALL_METHOD(rs_emitNewPlot, 0);
 
    // connect to onShowManipulator
    using namespace rstudio::r::session;
@@ -874,7 +889,9 @@ Error initialize()
       (bind(registerUriHandler, kGraphics "/plot_zoom_png", handleZoomPngRequest))
       (bind(registerUriHandler, kGraphics "/plot_zoom", handleZoomRequest))
       (bind(registerUriHandler, kGraphics "/plot.png", handlePngRequest))
-      (bind(registerUriHandler, kGraphics, handleGraphicsRequest));
+      (bind(registerUriHandler, kGraphics, handleGraphicsRequest))
+      (bind(module_context::sourceModuleRFile, "SessionPlots.R"));
+
    return initBlock.execute();
 }
          

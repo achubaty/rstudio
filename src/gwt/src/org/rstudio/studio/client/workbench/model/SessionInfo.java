@@ -54,6 +54,10 @@ public class SessionInfo extends JavaScriptObject
       return this.userIdentity;
    }-*/;
 
+   public final native String getSessionId() /*-{
+      return this.session_id;
+   }-*/;
+
    public final native JsArray<RnwWeave> getRnwWeaveTypes() /*-{
       return this.rnw_weave_types;
    }-*/;
@@ -245,8 +249,8 @@ public class SessionInfo extends JavaScriptObject
       return !!this.project_supports_sharing;
    }-*/;
    
-   public final native boolean isProjectOwner() /*-{
-      return !!this.project_owned_by_user;
+   public final native boolean projectParentBrowseable() /*-{
+      return !!this.project_parent_browseable;
    }-*/;
    
    public final native String getProjectUserDataDir() /*-{
@@ -268,10 +272,15 @@ public class SessionInfo extends JavaScriptObject
    public final static String BUILD_TOOLS_NONE = "None";
    public final static String BUILD_TOOLS_PACKAGE = "Package";
    public final static String BUILD_TOOLS_MAKEFILE = "Makefile";
+   public final static String BUILD_TOOLS_WEBSITE = "Website";
    public final static String BUILD_TOOLS_CUSTOM = "Custom";
    
    public final native String getBuildToolsType() /*-{
       return this.build_tools_type;
+   }-*/;
+  
+   public final native boolean getBuildToolsBookdownWebsite() /*-{
+      return this.build_tools_bookdown_website;
    }-*/;
    
    public final native String getBuildTargetDir() /*-{
@@ -442,5 +451,4 @@ public class SessionInfo extends JavaScriptObject
    public final native RAddins getAddins() /*-{
       return this.r_addins;
    }-*/;
-   
 }

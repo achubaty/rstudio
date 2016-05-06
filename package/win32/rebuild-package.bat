@@ -3,7 +3,7 @@ set PACKAGE_DIR="%CD%"
 
 REM Prepend Qt 5.4 SDK Mingw to path
 setlocal
-set PATH=C:\Qt\Qt5.4.0\Tools\mingw491_32\bin;%PATH%
+set PATH=C:\Qt\Qt5.4.1\Tools\mingw491_32\bin;%PATH%
 
 REM Strip Rtools out of the path (persume it's in the default location)
 CALL SET PATH=%PATH:C:\Rtools\bin;=%
@@ -28,8 +28,9 @@ IF "%PROCESSOR_ARCHITECTURE%" == "AMD64" call rebuild-install-win64.bat "%PACKAG
 
 REM create packages
 cd "%BUILD_DIR%"
-cpack -G NSIS
-IF "%CMAKE_BUILD_TYPE%" == "Release" cpack -G ZIP
+
+REM creating the NSIS installer takes a long time, so we just make a zip
+cpack -G ZIP
 cd ..
 
 REM unzip to devel directory

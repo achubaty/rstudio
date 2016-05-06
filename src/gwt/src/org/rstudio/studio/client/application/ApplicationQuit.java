@@ -32,6 +32,7 @@ import org.rstudio.studio.client.RStudioGinjector;
 import org.rstudio.studio.client.application.events.EventBus;
 import org.rstudio.studio.client.application.events.HandleUnsavedChangesEvent;
 import org.rstudio.studio.client.application.events.HandleUnsavedChangesHandler;
+import org.rstudio.studio.client.application.events.QuitInitiatedEvent;
 import org.rstudio.studio.client.application.events.RestartStatusEvent;
 import org.rstudio.studio.client.application.events.SaveActionChangedEvent;
 import org.rstudio.studio.client.application.events.SaveActionChangedHandler;
@@ -43,6 +44,7 @@ import org.rstudio.studio.client.application.model.SaveAction;
 import org.rstudio.studio.client.application.model.SuspendOptions;
 import org.rstudio.studio.client.common.GlobalDisplay;
 import org.rstudio.studio.client.common.GlobalProgressDelayer;
+import org.rstudio.studio.client.common.SuperDevMode;
 import org.rstudio.studio.client.common.filetypes.FileIconResources;
 import org.rstudio.studio.client.server.ServerError;
 import org.rstudio.studio.client.server.ServerRequestCallback;
@@ -57,6 +59,7 @@ import org.rstudio.studio.client.workbench.ui.unsaved.UnsavedChangesDialog;
 import org.rstudio.studio.client.workbench.ui.unsaved.UnsavedChangesDialog.Result;
 import org.rstudio.studio.client.workbench.views.console.events.ConsoleRestartRCompletedEvent;
 import org.rstudio.studio.client.workbench.views.console.events.SendToConsoleEvent;
+import org.rstudio.studio.client.workbench.views.source.Source;
 import org.rstudio.studio.client.workbench.views.source.SourceShim;
 
 import com.google.gwt.core.client.GWT;
@@ -96,6 +99,9 @@ public class ApplicationQuit implements SaveActionChangedHandler,
       // bind to commands
       binder.bind(commands, this);
       
+      // only enable suspendSession() in devmode
+      commands.suspendSession().setVisible(SuperDevMode.isActive());
+      
       // subscribe to events
       eventBus.addHandler(SaveActionChangedEvent.TYPE, this);   
       eventBus.addHandler(HandleUnsavedChangesEvent.TYPE, this);
@@ -119,6 +125,8 @@ public class ApplicationQuit implements SaveActionChangedHandler,
                               final boolean forceSaveAll,
                               final QuitContext quitContext)
    {
+      eventBus_.fireEvent(new QuitInitiatedEvent());
+      
       if (workbenchContext_.isServerBusy() && !forceSaveAll)
       {
          globalDisplay_.showYesNoMessage(
@@ -162,6 +170,13 @@ public class ApplicationQuit implements SaveActionChangedHandler,
             sourceShim_, workbenchContext_, globalEnvTarget_, quitContext);
    }
    
+   
+   private static boolean handlingUnsavedChanges_;
+   public static boolean isHandlingUnsavedChanges()
+   {
+      return handlingUnsavedChanges_;
+   }
+   
    public static void handleUnsavedChanges(final int saveAction, 
                                      String caption,
                                      boolean forceSaveAll,
@@ -172,7 +187,7 @@ public class ApplicationQuit implements SaveActionChangedHandler,
    {   
       // see what the unsaved changes situation is and prompt accordingly
       ArrayList<UnsavedChangesTarget> unsavedSourceDocs = 
-                                             sourceShim.getUnsavedChanges();
+                        sourceShim.getUnsavedChanges(Source.TYPE_FILE_BACKED);
       
       // force save all
       if (forceSaveAll)
@@ -395,7 +410,7 @@ public class ApplicationQuit implements SaveActionChangedHandler,
       
       // get unsaved source docs
       ArrayList<UnsavedChangesTarget> unsavedSourceDocs = 
-                                          sourceShim_.getUnsavedChanges();
+                        sourceShim_.getUnsavedChanges(Source.TYPE_FILE_BACKED);
       
       if (unsavedSourceDocs.size() == 1)
       {
@@ -438,6 +453,12 @@ public class ApplicationQuit implements SaveActionChangedHandler,
                                  SuspendOptions.createSaveMinimal(saveChanges),
                                  null));  
 
+   }
+   
+   @Handler
+   public void onSuspendSession()
+   {
+      server_.suspendSession(true, new VoidServerRequestCallback());
    }
    
    @Override

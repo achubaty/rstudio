@@ -1,7 +1,7 @@
 /*
  * Source.java
  *
- * Copyright (C) 2009-15 by RStudio, Inc.
+ * Copyright (C) 2009-16 by RStudio, Inc.
  *
  * Unless you have received this program directly from RStudio pursuant
  * to the terms of a commercial license agreement with RStudio, then
@@ -19,21 +19,27 @@ import com.google.gwt.core.client.JsArray;
 import com.google.gwt.core.client.JsArrayString;
 import com.google.gwt.core.client.Scheduler;
 import com.google.gwt.core.client.Scheduler.ScheduledCommand;
-import com.google.gwt.dom.client.NativeEvent;
 import com.google.gwt.event.dom.client.ChangeEvent;
 import com.google.gwt.event.dom.client.ChangeHandler;
 import com.google.gwt.event.dom.client.KeyCodes;
-import com.google.gwt.event.logical.shared.*;
+import com.google.gwt.event.logical.shared.CloseEvent;
+import com.google.gwt.event.logical.shared.CloseHandler;
+import com.google.gwt.event.logical.shared.HasBeforeSelectionHandlers;
+import com.google.gwt.event.logical.shared.HasSelectionHandlers;
+import com.google.gwt.event.logical.shared.SelectionEvent;
+import com.google.gwt.event.logical.shared.SelectionHandler;
+import com.google.gwt.event.logical.shared.ValueChangeEvent;
+import com.google.gwt.event.logical.shared.ValueChangeHandler;
 import com.google.gwt.event.shared.HandlerRegistration;
 import com.google.gwt.json.client.JSONString;
 import com.google.gwt.json.client.JSONValue;
 import com.google.gwt.resources.client.ImageResource;
 import com.google.gwt.user.client.Command;
 import com.google.gwt.user.client.Event;
-import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.Event.NativePreviewEvent;
 import com.google.gwt.user.client.Event.NativePreviewHandler;
 import com.google.gwt.user.client.Timer;
+import com.google.gwt.user.client.Window;
 import com.google.gwt.user.client.ui.IsWidget;
 import com.google.gwt.user.client.ui.Widget;
 import com.google.inject.Inject;
@@ -58,6 +64,7 @@ import org.rstudio.studio.client.application.Desktop;
 import org.rstudio.studio.client.application.events.CrossWindowEvent;
 import org.rstudio.studio.client.application.events.EventBus;
 import org.rstudio.studio.client.common.FileDialogs;
+import org.rstudio.studio.client.common.FilePathUtils;
 import org.rstudio.studio.client.common.GlobalDisplay;
 import org.rstudio.studio.client.common.GlobalProgressDelayer;
 import org.rstudio.studio.client.common.SimpleRequestCallback;
@@ -74,10 +81,11 @@ import org.rstudio.studio.client.common.rnw.RnwWeaveRegistry;
 import org.rstudio.studio.client.common.satellite.Satellite;
 import org.rstudio.studio.client.common.synctex.Synctex;
 import org.rstudio.studio.client.common.synctex.events.SynctexStatusChangedEvent;
-import org.rstudio.studio.client.events.GetActiveDocumentContextEvent;
+import org.rstudio.studio.client.events.GetEditorContextEvent;
+import org.rstudio.studio.client.events.GetEditorContextEvent.DocumentSelection;
 import org.rstudio.studio.client.events.ReplaceRangesEvent;
-import org.rstudio.studio.client.events.GetActiveDocumentContextEvent.DocumentSelection;
 import org.rstudio.studio.client.events.ReplaceRangesEvent.ReplacementData;
+import org.rstudio.studio.client.events.SetSelectionRangesEvent;
 import org.rstudio.studio.client.rmarkdown.model.RMarkdownContext;
 import org.rstudio.studio.client.rmarkdown.model.RmdChosenTemplate;
 import org.rstudio.studio.client.rmarkdown.model.RmdFrontMatter;
@@ -87,6 +95,7 @@ import org.rstudio.studio.client.server.ServerError;
 import org.rstudio.studio.client.server.ServerRequestCallback;
 import org.rstudio.studio.client.server.VoidServerRequestCallback;
 import org.rstudio.studio.client.workbench.ConsoleEditorProvider;
+import org.rstudio.studio.client.workbench.MainWindowObject;
 import org.rstudio.studio.client.workbench.FileMRUList;
 import org.rstudio.studio.client.workbench.WorkbenchContext;
 import org.rstudio.studio.client.workbench.codesearch.model.SearchPathFunctionDefinition;
@@ -115,17 +124,14 @@ import org.rstudio.studio.client.workbench.views.source.editors.EditingTarget;
 import org.rstudio.studio.client.workbench.views.source.editors.EditingTargetSource;
 import org.rstudio.studio.client.workbench.views.source.editors.codebrowser.CodeBrowserEditingTarget;
 import org.rstudio.studio.client.workbench.views.source.editors.data.DataEditingTarget;
-import org.rstudio.studio.client.workbench.views.source.editors.profiler.ProfilerEditingTarget;
+import org.rstudio.studio.client.workbench.views.source.editors.profiler.OpenProfileEvent;
 import org.rstudio.studio.client.workbench.views.source.editors.profiler.model.ProfilerContents;
 import org.rstudio.studio.client.workbench.views.source.editors.text.AceEditor;
-import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkIconsManager;
 import org.rstudio.studio.client.workbench.views.source.editors.text.DocDisplay;
 import org.rstudio.studio.client.workbench.views.source.editors.text.TextEditingTarget;
 import org.rstudio.studio.client.workbench.views.source.editors.text.TextEditingTargetPresentationHelper;
 import org.rstudio.studio.client.workbench.views.source.editors.text.TextEditingTargetRMarkdownHelper;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.AceEditorNative;
-import org.rstudio.studio.client.workbench.views.source.editors.text.ace.DisplayChunkOptionsEvent;
-import org.rstudio.studio.client.workbench.views.source.editors.text.ace.ExecuteChunksEvent;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Position;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Range;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ace.Selection;
@@ -171,7 +177,11 @@ public class Source implements InsertSourceHandler,
                              DocWindowChangedEvent.Handler,
                              DocTabDragInitiatedEvent.Handler,
                              PopoutDocInitiatedEvent.Handler,
-                             DebugModeChangedEvent.Handler
+                             DebugModeChangedEvent.Handler,
+                             OpenProfileEvent.Handler,
+                             ReplaceRangesEvent.Handler,
+                             SetSelectionRangesEvent.Handler,
+                             GetEditorContextEvent.Handler
 {
    public interface Display extends IsWidget,
                                     HasTabClosingHandlers,
@@ -241,7 +251,6 @@ public class Source implements InsertSourceHandler,
                  Satellite satellite,
                  ConsoleEditorProvider consoleEditorProvider,
                  RnwWeaveRegistry rnwWeaveRegistry,
-                 ChunkIconsManager chunkIconsManager,
                  DependencyManager dependencyManager,
                  SourceWindowManager windowManager)
    {
@@ -262,7 +271,6 @@ public class Source implements InsertSourceHandler,
       uiPrefs_ = uiPrefs;
       consoleEditorProvider_ = consoleEditorProvider;
       rnwWeaveRegistry_ = rnwWeaveRegistry;
-      chunkIconsManager_ = chunkIconsManager;
       dependencyManager_ = dependencyManager;
       windowManager_ = windowManager;
       
@@ -296,6 +304,7 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.insertSection());
       dynamicCommands_.add(commands.executeSetupChunk());
       dynamicCommands_.add(commands.executePreviousChunks());
+      dynamicCommands_.add(commands.executeSubsequentChunks());
       dynamicCommands_.add(commands.executeCurrentChunk());
       dynamicCommands_.add(commands.executeNextChunk());
       dynamicCommands_.add(commands.sourceActiveDocument());
@@ -334,7 +343,7 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.editRmdFormatOptions());
       dynamicCommands_.add(commands.reformatCode());
       dynamicCommands_.add(commands.showDiagnosticsActiveDocument());
-      dynamicCommands_.add(commands.renameInFile());
+      dynamicCommands_.add(commands.renameInScope());
       dynamicCommands_.add(commands.insertRoxygenSkeleton());
       dynamicCommands_.add(commands.expandSelection());
       dynamicCommands_.add(commands.shrinkSelection());
@@ -342,18 +351,33 @@ public class Source implements InsertSourceHandler,
       dynamicCommands_.add(commands.knitWithParameters());
       dynamicCommands_.add(commands.goToNextSection());
       dynamicCommands_.add(commands.goToPrevSection());
+      dynamicCommands_.add(commands.profileCode());
+      dynamicCommands_.add(commands.profileCodeWithoutFocus());
+      dynamicCommands_.add(commands.saveProfileAs());
+      dynamicCommands_.add(commands.restartRClearOutput());
+      dynamicCommands_.add(commands.restartRRunAllChunks());
+      dynamicCommands_.add(commands.notebookCollapseAllOutput());
+      dynamicCommands_.add(commands.notebookExpandAllOutput());
+      dynamicCommands_.add(commands.notebookClearAllOutput());
       for (AppCommand command : dynamicCommands_)
       {
          command.setVisible(false);
          command.setEnabled(false);
       }
       
+      // feature flag for notebook
+      if (!uiPrefs_.showRmdChunkOutputInline().getValue())
+      {
+         commands.newRNotebook().setEnabled(false);
+         commands.newRNotebook().setVisible(false);
+      }
+
       // fake shortcuts for commands which we handle at a lower level
       commands.goToHelp().setShortcut(new KeyboardShortcut(112));
       commands.goToFunctionDefinition().setShortcut(new KeyboardShortcut(113));
       commands.codeCompletion().setShortcut(
                                     new KeyboardShortcut(KeyCodes.KEY_TAB));
-
+      
       // See bug 3673 and https://bugs.webkit.org/show_bug.cgi?id=41016
       if (BrowseCap.isMacintosh())
       {
@@ -464,30 +488,6 @@ public class Source implements InsertSourceHandler,
          }
       });
       
-      events.addHandler(ExecuteChunksEvent.TYPE, new ExecuteChunksEvent.Handler()
-      {
-         @Override
-         public void onExecuteChunks(ExecuteChunksEvent event)
-         {
-            if (activeEditor_ == null)
-               return;
-            
-            if (!(activeEditor_ instanceof TextEditingTarget))
-               return;
-            
-            TextEditingTarget target = (TextEditingTarget) activeEditor_;
-            Position position =
-                  target.screenCoordinatesToDocumentPosition(0, event.getPageY());
-            
-            if (event.getScope() == ExecuteChunksEvent.Scope.Current)
-               target.executeChunk(position);
-            else if (event.getScope() == ExecuteChunksEvent.Scope.Previous)
-               target.executePreviousChunks(position);
-            
-            target.focus();
-         }
-      });
-      
       events.addHandler(CollabEditStartedEvent.TYPE, 
             new CollabEditStartedEvent.Handler() 
       {
@@ -539,114 +539,10 @@ public class Source implements InsertSourceHandler,
       events.addHandler(DocTabDragInitiatedEvent.TYPE, this);
       events.addHandler(PopoutDocInitiatedEvent.TYPE, this);
       events.addHandler(DebugModeChangedEvent.TYPE, this);
-      
-      events.addHandler(
-            ReplaceRangesEvent.TYPE,
-            new ReplaceRangesEvent.Handler()
-            {
-               @Override
-               public void onReplaceRanges(final ReplaceRangesEvent event)
-               {
-                  InputEditorDisplay console = consoleEditorProvider_.getConsoleEditor();
-                  final String id = event.getData().getId();
-                  
-                  boolean isConsoleEvent = false;
-                  if (console != null)
-                  {
-                     isConsoleEvent =
-                           (StringUtil.isNullOrEmpty(id) && console.isFocused()) ||
-                           "#console".equals(id);
-                  }
-                  if (isConsoleEvent)
-                  {
-                     doReplaceRanges(event, (DocDisplay) console);
-                  }
-                  else
-                  {
-                     withTarget(id, new CommandWithArg<TextEditingTarget>()
-                     {
-                        @Override
-                        public void execute(TextEditingTarget target)
-                        {
-                           doReplaceRanges(event, target.getDocDisplay());
-                        }
-                     });
-                  }
-               }
-            });
-      
-      events.addHandler(
-            GetActiveDocumentContextEvent.TYPE,
-            new GetActiveDocumentContextEvent.Handler()
-            {
-               @Override
-               public void onGetActiveDocumentContext(GetActiveDocumentContextEvent event)
-               {
-                  InputEditorDisplay console = consoleEditorProvider_.getConsoleEditor();
-                  if (console != null && console.isFocused())
-                  {
-                     AceEditor editor = (AceEditor) console;
-                     Selection selection = editor.getNativeSelection();
-                     Range[] ranges = selection.getAllRanges();
-
-                     JsArray<DocumentSelection> docSelections = JavaScriptObject.createArray().cast();
-                     for (int i = 0; i < ranges.length; i++)
-                     {
-                        docSelections.push(DocumentSelection.create(
-                              ranges[i],
-                              editor.getTextForRange(ranges[i])));
-                     }
-                     
-                     GetActiveDocumentContextEvent.Data data =
-                           GetActiveDocumentContextEvent.Data.create(
-                                 "#console",
-                                 "",
-                                 editor.getCode(),
-                                 docSelections);
-                     
-                     server_.getActiveDocumentContextCompleted(data, new VoidServerRequestCallback());
-                  }
-                  else
-                  {
-                     withTarget(null, new CommandWithArg<TextEditingTarget>()
-                     {
-                        @Override
-                        public void execute(TextEditingTarget target)
-                        {
-                           Selection selection = target.getDocDisplay().getNativeSelection();
-                           Range[] ranges = selection.getAllRanges();
-                           
-                           JsArray<DocumentSelection> docSelections = JavaScriptObject.createArray().cast();
-                           for (int i = 0; i < ranges.length; i++)
-                           {
-                              docSelections.push(DocumentSelection.create(
-                                    ranges[i],
-                                    target.getDocDisplay().getTextForRange(ranges[i])));
-                           }
-                           
-                           GetActiveDocumentContextEvent.Data data =
-                                 GetActiveDocumentContextEvent.Data.create(
-                                       StringUtil.notNull(target.getId()),
-                                       StringUtil.notNull(target.getPath()),
-                                       StringUtil.notNull(target.getDocDisplay().getCode()),
-                                       docSelections);
-                           
-                           server_.getActiveDocumentContextCompleted(data, new VoidServerRequestCallback());
-                        }
-                     },
-                     new Command()
-                     {
-                        @Override
-                        public void execute()
-                        {
-                           server_.getActiveDocumentContextCompleted(
-                                 GetActiveDocumentContextEvent.Data.create(),
-                                 new VoidServerRequestCallback());
-                        }
-                     });
-                  }
-               }
-            });
+      events.addHandler(ReplaceRangesEvent.TYPE, this);
+      events.addHandler(GetEditorContextEvent.TYPE, this);
+      events.addHandler(SetSelectionRangesEvent.TYPE, this);
+      events.addHandler(OpenProfileEvent.TYPE, this);
 
       // Suppress 'CTRL + ALT + SHIFT + click' to work around #2483 in Ace
       Event.addNativePreviewHandler(new NativePreviewHandler()
@@ -731,9 +627,12 @@ public class Source implements InsertSourceHandler,
       
       // add vim commands
       initVimCommands();
-      
-      // handle chunk options event
-      handleChunkOptionsEvent();
+   }
+   
+   private boolean consoleEditorHadFocusLast()
+   {
+      String id = MainWindowObject.lastFocusedEditor().get();
+      return "rstudio_console_input".equals(id);
    }
    
    private void withTarget(String id,
@@ -759,6 +658,29 @@ public class Source implements InsertSourceHandler,
       }
       
       command.execute((TextEditingTarget) target);
+   }
+   
+   private void getEditorContext(String id, String path, DocDisplay docDisplay)
+   {
+      AceEditor editor = (AceEditor) docDisplay;
+      Selection selection = editor.getNativeSelection();
+      Range[] ranges = selection.getAllRanges();
+
+      JsArray<DocumentSelection> docSelections = JavaScriptObject.createArray().cast();
+      for (int i = 0; i < ranges.length; i++)
+      {
+         docSelections.push(DocumentSelection.create(
+               ranges[i],
+               editor.getTextForRange(ranges[i])));
+      }
+
+      id = StringUtil.notNull(id);
+      path = StringUtil.notNull(path);
+      
+      GetEditorContextEvent.SelectionData data =
+            GetEditorContextEvent.SelectionData.create(id, path, editor.getCode(), docSelections);
+      
+      server_.getEditorContextCompleted(data, new VoidServerRequestCallback());
    }
    
    private void withTarget(String id, CommandWithArg<TextEditingTarget> command)
@@ -1062,14 +984,17 @@ public class Source implements InsertSourceHandler,
             });
    }
    
-   @Handler
-   public void onShowProfiler()
+   public void onShowProfiler(OpenProfileEvent event)
    {
+      String profilePath = event.getFilePath();
+      String htmlPath = event.getHtmlPath();
+      String htmlLocalPath = event.getHtmlLocalPath();
+      
       // first try to activate existing
       for (int idx = 0; idx < editors_.size(); idx++)
       {
          String path = editors_.get(idx).getPath();
-         if (ProfilerEditingTarget.PATH.equals(path))
+         if (path != null && profilePath.equals(path))
          {
             ensureVisible(false);
             view_.selectTab(idx);
@@ -1079,10 +1004,35 @@ public class Source implements InsertSourceHandler,
       
       // create new profiler 
       ensureVisible(true);
-      server_.newDocument(
+
+      if (event.getDocId() != null)
+      {
+         server_.getSourceDocument(event.getDocId(), new ServerRequestCallback<SourceDocument>()
+         {
+            @Override
+            public void onResponseReceived(SourceDocument response)
+            {
+               addTab(response);
+            }
+            
+            @Override
+            public void onError(ServerError error)
+            {
+               Debug.logError(error);
+               globalDisplay_.showErrorMessage("Source Document Error", error.getUserMessage());
+            }
+         });
+      }
+      else
+      {
+         server_.newDocument(
             FileTypeRegistry.PROFILER.getTypeId(),
             null,
-            (JsObject) ProfilerContents.createDefault().cast(),
+            (JsObject) ProfilerContents.create(
+                  profilePath,
+                  htmlPath, 
+                  htmlLocalPath,
+                  event.getCreateProfile()).cast(),
             new SimpleRequestCallback<SourceDocument>("Show Profiler")
             {
                @Override
@@ -1090,10 +1040,17 @@ public class Source implements InsertSourceHandler,
                {
                   addTab(response);
                }
+               
+               @Override
+               public void onError(ServerError error)
+               {
+                  Debug.logError(error);
+                  globalDisplay_.showErrorMessage("Source Document Error", error.getUserMessage());
+               }
             });
+      }
    }
    
-
    @Handler
    public void onNewSourceDoc()
    {
@@ -1104,6 +1061,27 @@ public class Source implements InsertSourceHandler,
    public void onNewTextDoc()
    {
       newDoc(FileTypeRegistry.TEXT, null);
+   }
+   
+   @Handler
+   public void onNewRNotebook()
+   {
+      dependencyManager_.withRMarkdown("R Notebook",
+         "Create R Notebook", new Command() {
+         @Override
+         public void execute()
+         {
+            String basename = "r_markdown_notebook";
+            if (BrowseCap.isMacintosh())
+               basename += "_osx";
+
+            newSourceDocWithTemplate(
+                  FileTypeRegistry.RMARKDOWN,
+                  "",
+                  basename + ".Rmd",
+                  Position.create(3, 0));
+         }
+      });
    }
    
    @Handler
@@ -1751,25 +1729,13 @@ public class Source implements InsertSourceHandler,
    @Handler
    public void onPreviousTab()
    {
-      if (view_.getTabCount() == 0)
-         return;
-
-      ensureVisible(false);
-      int index = getPhysicalTabIndex();
-      if (index >= 1)
-         setPhysicalTabIndex(index - 1);
+      switchToTab(-1, false);
    }
 
    @Handler
    public void onNextTab()
    {
-      if (view_.getTabCount() == 0)
-         return;
-
-      ensureVisible(false);
-      int index = getPhysicalTabIndex();
-      if (index < view_.getTabCount() - 1)
-         setPhysicalTabIndex(index + 1);
+      switchToTab(1, false);
    }
 
    @Handler
@@ -1781,6 +1747,41 @@ public class Source implements InsertSourceHandler,
       ensureVisible(false);
       if (view_.getTabCount() > 0)
          setPhysicalTabIndex(view_.getTabCount() - 1);
+   }
+   
+   public void nextTabWithWrap()
+   {
+      switchToTab(1, true);
+   }
+
+   public void prevTabWithWrap()
+   {
+      switchToTab(-1, true);
+   }
+   
+   private void switchToTab(int delta, boolean wrap)
+   {
+      if (view_.getTabCount() == 0)
+         return;
+      
+      ensureVisible(false);
+
+      int targetIndex = getPhysicalTabIndex() + delta;
+      if (targetIndex > (view_.getTabCount() - 1))
+      {
+         if (wrap)
+            targetIndex = 0;
+         else
+            return;
+      }
+      else if (targetIndex < 0)
+      {
+         if (wrap)
+            targetIndex = view_.getTabCount() - 1;
+         else
+            return;
+      }
+      setPhysicalTabIndex(targetIndex);
    }
    
    @Handler
@@ -2207,12 +2208,15 @@ public class Source implements InsertSourceHandler,
       
    }
    
-   private boolean isUnsavedFileBackedTarget(EditingTarget target)
+   private boolean isUnsavedTarget(EditingTarget target, int type)
    {
-      return target.dirtyState().getValue() && (target.getPath() != null);
+      boolean fileBacked = target.getPath() != null;
+      return target.dirtyState().getValue() && 
+              ((type == TYPE_FILE_BACKED &&  fileBacked) ||
+               (type == TYPE_UNTITLED    && !fileBacked));
    }
    
-   public ArrayList<UnsavedChangesTarget> getUnsavedChanges()
+   public ArrayList<UnsavedChangesTarget> getUnsavedChanges(int type)
    {
       ArrayList<UnsavedChangesTarget> targets = 
                                        new ArrayList<UnsavedChangesTarget>();
@@ -2221,11 +2225,11 @@ public class Source implements InsertSourceHandler,
       // the satellite windows as well
       if (SourceWindowManager.isMainSourceWindow())
       {
-         targets.addAll(windowManager_.getAllSatelliteUnsavedChanges());
+         targets.addAll(windowManager_.getAllSatelliteUnsavedChanges(type));
       }
 
       for (EditingTarget target : editors_)
-         if (isUnsavedFileBackedTarget(target))
+         if (isUnsavedTarget(target, type))
             targets.add(target);
       
       return targets;
@@ -2238,7 +2242,7 @@ public class Source implements InsertSourceHandler,
          @Override
          public void execute()
          {
-            saveChanges(getUnsavedChanges(), onCompleted);
+            saveChanges(getUnsavedChanges(TYPE_FILE_BACKED), onCompleted);
          }
       };
 
@@ -2323,7 +2327,7 @@ public class Source implements InsertSourceHandler,
       // collect up unsaved targets
       ArrayList<EditingTarget> unsavedTargets =  new ArrayList<EditingTarget>();
       for (EditingTarget target : editors_)
-         if (isUnsavedFileBackedTarget(target))
+         if (isUnsavedTarget(target, TYPE_FILE_BACKED))
             unsavedTargets.add(target);
       
       // revert all of them
@@ -2683,6 +2687,70 @@ public class Source implements InsertSourceHandler,
                }
             });  
    }
+   
+   private void openNotebook(final FileSystemItem rnbFile,
+                             final TextFileType fileType,
+                             final ResultCallback<EditingTarget, ServerError> resultCallback)
+   {
+      // construct path to .Rmd
+      final String rnbPath = rnbFile.getPath();
+      final String rmdPath = FilePathUtils.filePathSansExtension(rnbPath) + ".Rmd";
+      final FileSystemItem rmdFile = FileSystemItem.createFile(rmdPath);
+      
+      // if we already have associated .Rmd file open, then just edit it
+      // TODO: should we perform conflict resolution here as well?
+      if (openFileAlreadyOpen(rmdFile, resultCallback))
+         return;
+      
+      // ask the server to extract the .Rmd, then open that
+      Command extractRmdCommand = new Command()
+      {
+         @Override
+         public void execute()
+         {
+            server_.extractRmdFromNotebook(
+                  rnbPath,
+                  rmdPath,
+                  new ServerRequestCallback<Boolean>()
+                  {
+                     @Override
+                     public void onResponseReceived(Boolean success)
+                     {
+                        openFileFromServer(rmdFile, FileTypeRegistry.RMARKDOWN, resultCallback);
+                     }
+
+                     @Override
+                     public void onError(ServerError error)
+                     {
+                        Debug.logError(error);
+                     }
+                  });
+         }
+      };
+      
+      dependencyManager_.withRMarkdown("R Notebook", "Using R Notebooks", extractRmdCommand);
+   }
+   
+   private boolean openFileAlreadyOpen(final FileSystemItem file,
+                                       final ResultCallback<EditingTarget, ServerError> resultCallback)
+   {
+      // check to see if any local editors have the file open
+      for (int i = 0; i < editors_.size(); i++)
+      {
+         EditingTarget target = editors_.get(i);
+         String thisPath = target.getPath();
+         if (thisPath != null
+             && thisPath.equalsIgnoreCase(file.getPath()))
+         {
+            view_.selectTab(i);
+            pMruList_.get().add(thisPath);
+            if (resultCallback != null)
+               resultCallback.onSuccess(target);
+            return true;
+         }
+      }
+      return false;
+   }
 
    // top-level wrapper for opening files. takes care of:
    //  - making sure the view is visible
@@ -2696,6 +2764,12 @@ public class Source implements InsertSourceHandler,
                          final ResultCallback<EditingTarget, ServerError> resultCallback)
    {
       ensureVisible(true);
+      
+      if (fileType.isRNotebook())
+      {
+         openNotebook(file, fileType, resultCallback);
+         return;
+      }
 
       if (file == null)
       {
@@ -2703,21 +2777,8 @@ public class Source implements InsertSourceHandler,
          return;
       }
 
-      // check to see if any local editors have the file open
-      for (int i = 0; i < editors_.size(); i++)
-      {
-         EditingTarget target = editors_.get(i);
-         String thisPath = target.getPath();
-         if (thisPath != null
-             && thisPath.equalsIgnoreCase(file.getPath()))
-         {
-            view_.selectTab(i);
-            pMruList_.get().add(thisPath);
-            if (resultCallback != null)
-               resultCallback.onSuccess(target);
-            return;
-         }
-      }
+      if (openFileAlreadyOpen(file, resultCallback))
+         return;
       
       EditingTarget target = editingTargetSource_.getEditingTarget(fileType);
 
@@ -2834,12 +2895,13 @@ public class Source implements InsertSourceHandler,
 
    private EditingTarget addTab(SourceDocument doc, Integer position)
    {
+      final String defaultNamePrefix = editingTargetSource_.getDefaultNamePrefix(doc);
       final EditingTarget target = editingTargetSource_.getEditingTarget(
             doc, fileContext_, new Provider<String>()
             {
                public String get()
                {
-                  return getNextDefaultName();
+                  return getNextDefaultName(defaultNamePrefix);
                }
             });
       
@@ -2926,20 +2988,25 @@ public class Source implements InsertSourceHandler,
       return target;
    }
 
-   private String getNextDefaultName()
+   private String getNextDefaultName(String defaultNamePrefix)
    {
+      if (StringUtil.isNullOrEmpty(defaultNamePrefix))
+      {
+         defaultNamePrefix = "Untitled";
+      }
+      
       int max = 0;
       for (EditingTarget target : editors_)
       {
          String name = target.getName().getValue();
-         max = Math.max(max, getUntitledNum(name));
+         max = Math.max(max, getUntitledNum(name, defaultNamePrefix));
       }
 
-      return "Untitled" + (max + 1);
+      return defaultNamePrefix + (max + 1);
    }
 
-   private native final int getUntitledNum(String name) /*-{
-      var match = /^Untitled([0-9]{1,5})$/.exec(name);
+   private native final int getUntitledNum(String name, String prefix) /*-{
+      var match = (new RegExp("^" + prefix + "([0-9]{1,5})$")).exec(name);
       if (!match)
          return 0;
       return parseInt(match[1]);
@@ -3242,6 +3309,10 @@ public class Source implements InsertSourceHandler,
       manageMultiTabCommands();
       
       activeCommands_ = newCommands;
+      
+      // give the active editor a chance to manage commands
+      if (activeEditor_ != null)
+         activeEditor_.manageCommands();
 
       assert verifyNoUnsupportedCommands(newCommands)
             : "Unsupported commands detected (please add to Source.dynamicCommands_)";
@@ -3911,35 +3982,9 @@ public class Source implements InsertSourceHandler,
       return activeEditor_;
    }
    
-   public void handleChunkOptionsEvent()
+   public void onOpenProfileEvent(OpenProfileEvent event)
    {
-      events_.addHandler(
-            DisplayChunkOptionsEvent.TYPE,
-            new DisplayChunkOptionsEvent.Handler()
-            {
-               
-               @Override
-               public void onDisplayChunkOptions(DisplayChunkOptionsEvent event)
-               {
-                  // Ensure the source pane (not the console) is activated
-                  if (activeEditor_ == null)
-                     return;
-                  
-                  // Ensure we have an Ace Editor
-                  if (!(activeEditor_ instanceof TextEditingTarget))
-                     return;
-                  
-                  TextEditingTarget target = (TextEditingTarget) activeEditor_;
-                  AceEditor editor = (AceEditor) target.getDocDisplay();
-                  if (editor == null)
-                     return;
-                  
-                  NativeEvent nativeEvent = event.getNativeEvent();
-                  chunkIconsManager_.displayChunkOptions(
-                        editor,
-                        nativeEvent);
-               }
-            });
+      onShowProfiler(event);
    }
    
    private void inEditorForPath(String path, 
@@ -3968,6 +4013,110 @@ public class Source implements InsertSourceHandler,
             break;
          }
       }
+   }
+   
+   private void dispatchEditorEvent(final String id,
+                                    final CommandWithArg<DocDisplay> command)
+   {
+      InputEditorDisplay console = consoleEditorProvider_.getConsoleEditor();
+
+      boolean isConsoleEvent = false;
+      if (console != null)
+      {
+         isConsoleEvent =
+               (StringUtil.isNullOrEmpty(id) && console.isFocused()) ||
+               "#console".equals(id);
+      }
+      if (isConsoleEvent)
+      {
+         command.execute((DocDisplay) console);
+      }
+      else
+      {
+         withTarget(id, new CommandWithArg<TextEditingTarget>()
+         {
+            @Override
+            public void execute(TextEditingTarget target)
+            {
+               command.execute(target.getDocDisplay());
+            }
+         });
+      }
+      
+   }
+   
+   @Override
+   public void onSetSelectionRanges(final SetSelectionRangesEvent event)
+   {
+      dispatchEditorEvent(event.getData().getId(), new CommandWithArg<DocDisplay>()
+      {
+         @Override
+         public void execute(DocDisplay docDisplay)
+         {
+            JsArray<Range> ranges = event.getData().getRanges();
+            if (ranges.length() == 0)
+               return;
+            
+            AceEditor editor = (AceEditor) docDisplay;
+            editor.setSelectionRanges(ranges);
+         }
+      });
+   }
+   
+   @Override
+   public void onGetEditorContext(GetEditorContextEvent event)
+   {
+      GetEditorContextEvent.Data data = event.getData();
+      int type = data.getType();
+
+      if (type == GetEditorContextEvent.TYPE_ACTIVE_EDITOR)
+      {
+         if (consoleEditorHadFocusLast() || activeEditor_ == null)
+            type = GetEditorContextEvent.TYPE_CONSOLE_EDITOR;
+         else
+            type = GetEditorContextEvent.TYPE_SOURCE_EDITOR;
+      }
+
+      if (type == GetEditorContextEvent.TYPE_CONSOLE_EDITOR)
+      {
+         InputEditorDisplay editor = consoleEditorProvider_.getConsoleEditor();
+         if (editor != null && editor instanceof DocDisplay)
+         {
+            getEditorContext("#console", "", (DocDisplay) editor);
+            return;
+         }
+      }
+      else if (type == GetEditorContextEvent.TYPE_SOURCE_EDITOR)
+      {
+         EditingTarget target = activeEditor_;
+         if (target != null && target instanceof TextEditingTarget)
+         {
+            getEditorContext(
+                  target.getId(),
+                  target.getPath(),
+                  ((TextEditingTarget) target).getDocDisplay());
+            return;
+         }
+      }
+
+      // We need to ensure a 'getEditorContext' event is always
+      // returned as we have a 'wait-for' event on the server side
+      server_.getEditorContextCompleted(
+            GetEditorContextEvent.SelectionData.create(),
+            new VoidServerRequestCallback());
+   }
+   
+   @Override
+   public void onReplaceRanges(final ReplaceRangesEvent event)
+   {
+      dispatchEditorEvent(event.getData().getId(), new CommandWithArg<DocDisplay>()
+      {
+         @Override
+         public void execute(DocDisplay docDisplay)
+         {
+            doReplaceRanges(event, docDisplay);
+         }
+      });
    }
    
    private void doReplaceRanges(ReplaceRangesEvent event, DocDisplay docDisplay)
@@ -4027,6 +4176,8 @@ public class Source implements InsertSourceHandler,
    // If positive, a new tab is about to be created
    private int newTabPending_;
    
-   private ChunkIconsManager chunkIconsManager_;
    private DependencyManager dependencyManager_;
+ 
+   public final static int TYPE_FILE_BACKED = 0;
+   public final static int TYPE_UNTITLED    = 1;
 }

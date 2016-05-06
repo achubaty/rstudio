@@ -110,7 +110,6 @@ public class CodeBrowserEditingTarget implements EditingTarget
       fontSizeManager_ = fontSizeManager;
       globalDisplay_ = globalDisplay;
       docDisplay_ = docDisplay;
-      codeExecution_ = new EditingTargetCodeExecution(docDisplay);
       
       TextEditingTarget.addRecordNavigationPositionHandler(releaseOnDismiss_,
                                                            docDisplay_, 
@@ -159,6 +158,7 @@ public class CodeBrowserEditingTarget implements EditingTarget
                           Provider<String> defaultNameProvider)
    {
       doc_ = document;
+      codeExecution_ = new EditingTargetCodeExecution(docDisplay_, getId());
       view_ = new CodeBrowserEditingTargetWidget(commands_,
                                                  globalDisplay_,
                                                  events_,
@@ -435,6 +435,11 @@ public class CodeBrowserEditingTarget implements EditingTarget
          commands.add(commands_.returnDocToMain());
       return commands;
    }
+   
+   @Override
+   public void manageCommands()
+   {
+   }
 
    @Override
    public boolean canCompilePdf()
@@ -708,6 +713,12 @@ public class CodeBrowserEditingTarget implements EditingTarget
    @Override
    public void endCollabSession()
    {
+   }
+
+   @Override
+   public String getDefaultNamePrefix()
+   {
+      return null;
    }
 
    // Private methods --------------------------------------------------------
