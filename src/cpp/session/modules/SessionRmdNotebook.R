@@ -61,11 +61,8 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
    if (!file.exists(rmdPath))
       stop("No file at path '", rmdPath, "'")
    
-   if (!file.exists(cachePath))
-      stop("No cache directory at path '", cachePath, "'")
-   
+   # tolerate missing cache (implies there's no chunk outputs)
    rmdPath <- .rs.normalizePath(rmdPath, winslash = "/", mustWork = TRUE)
-   cachePath <- .rs.normalizePath(cachePath, winslash = "/", mustWork = TRUE)
    rmdContents <- .rs.readLines(rmdPath)
    
    # Begin collecting the units that form the Rnb data structure
@@ -78,12 +75,20 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
    # Keep the original source data
    rnbData[["contents"]] <- rmdContents
    
+   # Set up rnbData structure (if we have a cache, these entries will be filled)
+   rnbData[["chunk_info"]] <- list()
+   rnbData[["chunk_data"]] <- list()
+   rnbData[["lib"]] <- list()
+   
+   # early return if we have no cache
+   if (!file.exists(cachePath))
+      return(rnbData)
+   
    # Read the chunk information
    chunkInfoPath <- file.path(cachePath, "chunks.json")
    chunkInfo <- .rs.fromJSON(.rs.readFile(chunkInfoPath))
    names(chunkInfo$chunk_definitions) <-
       unlist(lapply(chunkInfo$chunk_definitions, `[[`, "chunk_id"))
-   
    rnbData[["chunk_info"]] <- chunkInfo
    
    # Read the chunk data
@@ -212,29 +217,6 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
    # chunks in document back to chunks in cache)
    linesProcessed <- 1
    
-   original <- evaluate::evaluate
-   
-   # override 'evaluate' for duration of knit
-   # TODO: this code can be removed once knitr hits CRAN
-   evaluateOverride <- function(...) {
-      knitr::knit_hooks$get("evaluate")(...)
-   }
-   
-   # set and unset 'evaluate' with pre/post hooks
-   preKnit <- format$pre_knit
-   format$pre_knit <- function(...) {
-      result <- if (is.function(preKnit)) preKnit(...)
-      .rs.replaceBinding("evaluate", "evaluate", evaluateOverride)
-      result
-   }
-   
-   postKnit <- format$post_knit
-   format$post_knit <- function(...) {
-      result <- if (is.function(postKnit)) postKnit(...)
-      .rs.replaceBinding("evaluate", "evaluate", original)
-      result
-   }
-   
    # capture + override include hooks -- we always want our
    # chunk hook to fire + include output, but we can make sure
    # that only the annotations are included in such a case
@@ -267,10 +249,11 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
       },
       
       evaluate = function(code, ...) {
+         
          # restore original hook temporarily (so that any sub-calls
          # to 'evaluate' go to the correct function)
-         hook <- evaluate::evaluate
-         .rs.replaceBinding("evaluate", "evaluate", original)
+         evaluate <- get(".rs.evaluate", envir = .rs.toolsEnv())
+         hook <- .rs.replaceBinding("evaluate", "evaluate", evaluate)
          on.exit(.rs.replaceBinding("evaluate", "evaluate", hook), add = TRUE)
          
          linesProcessed <<- linesProcessed + length(code)
@@ -380,6 +363,14 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
    # augment hooks
    outputFormat <- .rs.rnb.cacheAugmentKnitrHooks(rnbData, outputFormat)
    
+   # override evaluate (so that we can use 'evaluate' knitr hook)
+   # TODO: this code can be removed once knitr hits CRAN
+   evaluate <- .rs.replaceBinding("evaluate", "evaluate", function(...) {
+      knitr::knit_hooks$get("evaluate")(...)
+   })
+   assign(".rs.evaluate", evaluate, envir = .rs.toolsEnv())
+   on.exit(.rs.replaceBinding("evaluate", "evaluate", evaluate), add = TRUE)
+   
    # call render with special format hooks
    rmarkdown::render(input = inputFile,
                      output_format = outputFormat,
@@ -395,20 +386,6 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
       outputPath <- .rs.withChangedExtension(rmdPath, "Rnb")
    
    cachePath <- .rs.rnb.cachePathFromRmdPath(rmdPath)
-   if (!file.exists(cachePath)) {
-      
-      # render our notebook, but don't evaluate any R code
-      eval <- knitr::opts_chunk$get("eval")
-      knitr::opts_chunk$set(eval = FALSE)
-      on.exit(knitr::opts_chunk$set(eval = eval), add = TRUE)
-      
-      # create the notebook
-      .rs.createNotebook(inputFile = rmdPath,
-                         outputFile = outputPath)
-      
-      return(TRUE)
-   }
-   
    rnbData <- .rs.readRnbCache(rmdPath, cachePath)
    .rs.createNotebookFromCacheData(rnbData, rmdPath, outputPath)
 })
@@ -585,7 +562,7 @@ assign(".rs.notebookVersion", envir = .rs.toolsEnv(), "1.0")
    contents <- .rs.readLines(nbPath)
    
    reComment  <- "^\\s*<!--\\s*rnb-([^-]+)-(begin|end)\\s*([^\\s-]+)?\\s*-->\\s*$"
-   reDocument <- "^\\s*<!--\\s*rnb-document-source\\s*([^\\s-]+)\\s*-->\\s*$"
+   reDocument <- "^<div id=\"rmd-source-code\">([^<]+)<\\/div>$"
    
    rmdContents <- NULL
    builder <- .rs.listBuilder()

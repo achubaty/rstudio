@@ -35,7 +35,6 @@ import org.rstudio.studio.client.application.events.RestartStatusEvent;
 import org.rstudio.studio.client.common.FilePathUtils;
 import org.rstudio.studio.client.common.GlobalDisplay;
 import org.rstudio.studio.client.common.dependencies.DependencyManager;
-import org.rstudio.studio.client.common.dependencies.model.Dependency;
 import org.rstudio.studio.client.rmarkdown.RmdOutput;
 import org.rstudio.studio.client.rmarkdown.events.RmdChunkOutputEvent;
 import org.rstudio.studio.client.rmarkdown.events.RmdChunkOutputFinishedEvent;
@@ -55,6 +54,7 @@ import org.rstudio.studio.client.workbench.views.console.ConsoleResources;
 import org.rstudio.studio.client.workbench.views.console.events.ConsoleWriteInputEvent;
 import org.rstudio.studio.client.workbench.views.console.events.ConsoleWriteInputHandler;
 import org.rstudio.studio.client.workbench.views.console.model.ConsoleServerOperations;
+import org.rstudio.studio.client.workbench.views.source.Source;
 import org.rstudio.studio.client.workbench.views.source.SourceWindowManager;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkOutputWidget;
 import org.rstudio.studio.client.workbench.views.source.editors.text.ChunkRowExecState;
@@ -76,6 +76,7 @@ import org.rstudio.studio.client.workbench.views.source.events.ChunkContextChang
 import org.rstudio.studio.client.workbench.views.source.events.NotebookRenderFinishedEvent;
 import org.rstudio.studio.client.workbench.views.source.events.SaveFileEvent;
 import org.rstudio.studio.client.workbench.views.source.events.SaveFileHandler;
+import org.rstudio.studio.client.workbench.views.source.events.SourceDocAddedEvent;
 import org.rstudio.studio.client.workbench.views.source.model.DirtyState;
 import org.rstudio.studio.client.workbench.views.source.model.DocUpdateSentinel;
 import org.rstudio.studio.client.workbench.views.source.model.SourceDocument;
@@ -110,7 +111,8 @@ public class TextEditingTargetNotebook
                           InterruptStatusEvent.Handler,
                           RestartStatusEvent.Handler,
                           ScopeTreeReadyEvent.Handler,
-                          PinnedLineWidget.Host
+                          PinnedLineWidget.Host,
+                          SourceDocAddedEvent.Handler
 {
    public interface Binder
    extends CommandBinder<Commands, TextEditingTargetNotebook> {}
@@ -343,6 +345,8 @@ public class TextEditingTargetNotebook
             events_.addHandler(InterruptStatusEvent.TYPE, this));
       releaseOnDismiss_.add(
             events_.addHandler(RestartStatusEvent.TYPE, this));
+      releaseOnDismiss_.add(
+            events_.addHandler(SourceDocAddedEvent.TYPE, this));
       
       // subscribe to global rmd output inline preference and sync
       // again when it changes
@@ -357,24 +361,18 @@ public class TextEditingTargetNotebook
             }));
    }
    
-   public void onActivate()
-   {
-      executedSinceActivate_ = false;
-   }
-   
    public void executeChunk(Scope chunk, String code, String options,
          int mode)
    {
-      // maximize the source window if it's paired with the console and this
-      // is the first chunk we've executed since we were activated
-      if (!executedSinceActivate_)
-      {
-         pSourceWindowManager_.get().maximizeSourcePaneIfNecessary();
-         executedSinceActivate_ = true;
-      }
-      
       // get the row that ends the chunk
       int row = chunk.getEnd().getRow();
+      
+      // maximize the source pane if we haven't yet this session
+      if (!maximizedPane_)
+      {
+         pSourceWindowManager_.get().maximizeSourcePaneIfNecessary();
+         maximizedPane_ = true;
+      }
 
       String chunkId = "";
       String setupCrc32 = "";
@@ -760,7 +758,9 @@ public class TextEditingTargetNotebook
          case ChunkChangeEvent.CHANGE_CREATE:
             createChunkOutput(ChunkDefinition.create(event.getRow(), 
                   1, true, ChunkOutputWidget.EXPANDED, RmdChunkOptions.create(),
-                  event.getChunkId()));
+                  event.getChunkId(), 
+                  getKnitrChunkLabel(event.getRow(), docDisplay_, 
+                        new ScopeList(docDisplay_))));
             break;
          case ChunkChangeEvent.CHANGE_REMOVE:
             removeChunk(event.getChunkId());
@@ -892,6 +892,22 @@ public class TextEditingTargetNotebook
    }
 
    @Override
+   public void onSourceDocAdded(SourceDocAddedEvent e)
+   {
+      if (e.getDoc().getId() != docUpdateSentinel_.getId())
+         return;
+      
+      // when interactively adding a new notebook, we maximize the source pane
+      if (e.getMode() == Source.OPEN_INTERACTIVE &&
+          editingTarget_.isActiveDocument() &&
+          editingTarget_.isRmdNotebook())
+      {
+         pSourceWindowManager_.get().maximizeSourcePaneIfNecessary();
+         maximizedPane_ = true;
+      }
+   }
+
+   @Override
    public void onScopeTreeReady(ScopeTreeReadyEvent event)
    {
       Scope thisScope = event.getCurrentScope();
@@ -949,6 +965,36 @@ public class TextEditingTargetNotebook
                   ChunkChangeEvent.CHANGE_REMOVE));
          }
       }
+   }
+
+   public static String getKnitrChunkLabel(int row, DocDisplay display, 
+         ScopeList scopes)
+   {
+      // find the chunk at this row
+      Scope chunk = display.getCurrentChunk(Position.create(row, 0));
+      if (chunk == null)
+         return "";
+      
+      // if it has a name, just return it
+      String label = chunk.getChunkLabel();
+      if (!StringUtil.isNullOrEmpty(label))
+         return label;
+      
+      // label the first unlabeled chunk as unlabeled-chunk-1, the next as
+      // unlabeled-chunk-2, etc.
+      int pos = 1;
+      for (Scope curScope: scopes)
+      {
+         if (!curScope.isChunk())
+            continue;
+         if (curScope.getPreamble().getRow() == 
+             chunk.getPreamble().getRow())
+            break;
+         if (StringUtil.isNullOrEmpty(curScope.getChunkLabel()))
+            pos++;
+      }
+      
+      return "unnamed-chunk-" + pos;
    }
 
    // Private methods --------------------------------------------------------
@@ -1108,7 +1154,9 @@ public class TextEditingTargetNotebook
          if (StringUtil.isNullOrEmpty(newId))
             newId = "c" + StringUtil.makeRandomId(12);
          chunkDef = ChunkDefinition.create(row, 1, true, 
-               ChunkOutputWidget.EXPANDED, RmdChunkOptions.create(), newId);
+               ChunkOutputWidget.EXPANDED, RmdChunkOptions.create(), newId,
+               getKnitrChunkLabel(row, docDisplay_, 
+                                  new ScopeList(docDisplay_)));
          
          if (newId == SETUP_CHUNK_ID)
             chunkDef.getOptions().setInclude(false);
@@ -1544,9 +1592,9 @@ public class TextEditingTargetNotebook
    private String setupCrc32_ = "";
    private int charWidth_ = 65;
    private int pixelWidth_ = 0;
-   private boolean executedSinceActivate_ = false;
    private boolean evaluatingParams_ = false;
    private int execQueueMaxSize_ = 0;
+   private boolean maximizedPane_ = false;
    
    private int state_ = STATE_NONE;
 
